@@ -1,5 +1,5 @@
 import { next } from "@vercel/functions";
-import { authorize } from "./server/auth";
+import { authorize } from "./server/auth.js";
 export default async function middleware(request: Request) {
   const response = await authorize(request, process.env);
   return (
