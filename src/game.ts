@@ -1,5 +1,13 @@
 export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
+// Balance tuning: only enemy HP scales, keeping rewards and pacing unchanged.
+export const DIFFICULTIES = {
+  easy: { label: "Easy", enemyHpMultiplier: 1 },
+  normal: { label: "Normal", enemyHpMultiplier: 1.5 },
+  hard: { label: "Hard", enemyHpMultiplier: 2 },
+} as const;
+export type Difficulty = keyof typeof DIFFICULTIES;
+export const DEFAULT_DIFFICULTY: Difficulty = "easy";
 export const TOWERS = {
   arrow: {
     name: "궁수탑",
@@ -70,6 +78,7 @@ export interface Shot {
 }
 export interface GameState {
   version: 1;
+  difficulty: Difficulty;
   phase: Phase;
   wave: number;
   gold: number;
@@ -89,9 +98,10 @@ export interface GameState {
   skillCooldown: number;
 }
 export const SAVE_KEY = "emberhold-save-v1";
-export function newGame(): GameState {
+export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState {
   return {
     version: 1,
+    difficulty,
     phase: "ready",
     wave: 0,
     gold: 200,
@@ -258,7 +268,7 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
           ? 2.5
           : kind === "runner"
             ? 0.7
-            : 1);
+            : 1) * DIFFICULTIES[s.difficulty].enemyHpMultiplier;
     const id = s.nextId++;
     s.enemies.push({
       id,
@@ -350,8 +360,11 @@ export function restore(raw: string | null): GameState | null {
   if (!raw) return null;
   try {
     const s = JSON.parse(raw) as GameState;
+    // Saves created before difficulty selection used today's Easy balance.
+    s.difficulty ??= DEFAULT_DIFFICULTY;
     if (
       s.version !== 1 ||
+      !Object.hasOwn(DIFFICULTIES, s.difficulty) ||
       !["ready", "battle", "won", "lost"].includes(s.phase) ||
       !Number.isInteger(s.wave) ||
       s.wave < 0 ||

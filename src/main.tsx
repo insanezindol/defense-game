@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   build,
+  DIFFICULTIES,
+  DEFAULT_DIFFICULTY,
   heroUpgradeCost,
   newGame,
   PADS,
@@ -17,10 +19,32 @@ import {
   upgradeTower,
   useSkill,
   type GameState,
+  type Difficulty,
   type TowerKind,
 } from "./game";
 import { World } from "./world";
 import "./style.css";
+
+function DifficultyPicker({ value, onChange }: {
+  value: Difficulty;
+  onChange: (difficulty: Difficulty) => void;
+}) {
+  return (
+    <fieldset className="difficulty-picker">
+      <legend>난이도 선택</legend>
+      <div className="difficulty-options">
+        {(Object.keys(DIFFICULTIES) as Difficulty[]).map((difficulty) => (
+          <label key={difficulty}>
+            <input type="radio" name="difficulty" value={difficulty}
+              checked={value === difficulty} onChange={() => onChange(difficulty)} />
+            <span><b>{DIFFICULTIES[difficulty].label}</b>
+              <small>적 체력 ×{DIFFICULTIES[difficulty].enemyHpMultiplier}</small></span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 function Icon({ name, size = 20 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
@@ -108,6 +132,9 @@ function App() {
   const [paused, setPaused] = useState(false),
     pausedRef = useRef(false);
   const [help, setHelp] = useState(!initial);
+  const [choosingDifficulty, setChoosingDifficulty] = useState(!initial);
+  const choosingDifficultyRef = useRef(!initial);
+  const [difficulty, setDifficulty] = useState<Difficulty>(initial?.difficulty ?? DEFAULT_DIFFICULTY);
   const [confirmReset, setConfirmReset] = useState(false);
   const [sound, setSound] = useState(false),
     soundRef = useRef(false);
@@ -153,6 +180,7 @@ function App() {
     }
   }
   function save() {
+    if (choosingDifficultyRef.current) return;
     try {
       localStorage.setItem(SAVE_KEY, serialize(state.current));
       setSaveError(false);
@@ -182,11 +210,14 @@ function App() {
     }
   }
   function reset() {
-    state.current = newGame();
+    state.current = newGame(difficulty);
+    choosingDifficultyRef.current = false;
     setView({ ...state.current });
     setSelected(null);
     setPaused(false);
     setConfirmReset(false);
+    setChoosingDifficulty(false);
+    setHelp(false);
     save();
     notify("새로운 왕국의 이야기가 시작됩니다.");
   }
@@ -385,7 +416,7 @@ function App() {
               <i /> THE GREENWARD
             </span>
             <h1>초록빛 변경</h1>
-            <p>이 작은 왕국을, 끝까지 지켜주세요.</p>
+            <p>이 작은 왕국을, 끝까지 지켜주세요. · {DIFFICULTIES[view.difficulty].label}</p>
           </div>
           <div className="wave-badge">
             <Icon name="flag" />
@@ -829,9 +860,14 @@ function App() {
               <br />
               모바일: 왼쪽 조이스틱 이동 · 오른쪽 번개 스킬
             </div>
+            {choosingDifficulty && <DifficultyPicker value={difficulty} onChange={setDifficulty} />}
             <button
               className="primary full"
               onClick={() => {
+                if (choosingDifficulty) {
+                  reset();
+                  return;
+                }
                 setHelp(false);
                 save();
               }}
@@ -885,6 +921,7 @@ function App() {
               현재 진행 상황을 지우고
               <br />첫 공세부터 다시 시작할까요?
             </p>
+            <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             <button className="primary full" onClick={reset}>
               새 게임 시작
             </button>
@@ -897,7 +934,7 @@ function App() {
           </section>
         </div>
       )}
-      {ended && !help && (
+      {ended && !help && !confirmReset && (
         <div className="modal-backdrop">
           <section
             className="modal compact"
@@ -931,7 +968,7 @@ function App() {
                 처치한 적<b>{view.kills}</b>
               </span>
             </div>
-            <button className="primary full" onClick={reset}>
+            <button className="primary full" onClick={() => setConfirmReset(true)}>
               다시 도전하기
               <Icon name="reset" size={18} />
             </button>

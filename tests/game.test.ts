@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   build,
+  DIFFICULTIES,
   heroUpgradeCost,
   newGame,
   repair,
@@ -14,6 +15,41 @@ import {
   upgradeTower,
   useSkill,
 } from "../src/game";
+
+test("difficulty scales every enemy kind including bosses without extra rewards", () => {
+  for (const difficulty of ["easy", "normal", "hard"] as const) {
+    const baseline = newGame();
+    const scaled = newGame(difficulty);
+    baseline.wave = scaled.wave = 4;
+    startWave(baseline);
+    startWave(scaled);
+    const kinds = new Set<string>();
+    for (let spawn = 0; spawn < scaled.total; spawn++) {
+      baseline.timer = scaled.timer = 0;
+      update(baseline, 0.01);
+      update(scaled, 0.01);
+      const original = baseline.enemies.at(-1)!;
+      const enemy = scaled.enemies.at(-1)!;
+      kinds.add(enemy.kind);
+      assert.equal(enemy.maxHp, original.maxHp * DIFFICULTIES[difficulty].enemyHpMultiplier);
+      assert.equal(enemy.hp, enemy.maxHp);
+      assert.equal(enemy.speed, original.speed);
+      assert.equal(enemy.reward, original.reward);
+    }
+    assert.equal(kinds.size, 4);
+    assert.equal(restore(serialize(scaled))?.difficulty, difficulty);
+  }
+});
+
+test("legacy saves default to Easy and unknown difficulties are rejected", () => {
+  const legacy = JSON.parse(serialize(newGame()));
+  delete legacy.difficulty;
+  assert.equal(restore(JSON.stringify(legacy))?.difficulty, "easy");
+  legacy.difficulty = "extreme";
+  assert.equal(restore(JSON.stringify(legacy)), null);
+  legacy.difficulty = "toString";
+  assert.equal(restore(JSON.stringify(legacy)), null);
+});
 
 test("building spends gold exactly once and rejects duplicate/insufficient purchases", () => {
   const s = newGame();

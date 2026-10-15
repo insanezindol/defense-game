@@ -1071,6 +1071,47 @@ kbd {
   display: block;
   margin-top: 15px;
 }
+.difficulty-picker {
+  border: 0;
+  padding: 0;
+  margin: 20px 0;
+  min-width: 0;
+}
+.difficulty-picker legend {
+  font-size: 12px;
+  margin: 0 auto 12px;
+  color: #596d4e;
+}
+.difficulty-options {
+  display: flex;
+  gap: 8px;
+}
+.difficulty-options label {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.difficulty-options input {
+  accent-color: #36563e;
+}
+.difficulty-options span {
+  display: block;
+  border: 1px solid #d4dcc2;
+  border-radius: 8px;
+  padding: 12px 3px;
+  margin-top: 5px;
+}
+.difficulty-options input:checked + span {
+  background: #e1e9d5;
+  border-color: #36563e;
+}
+.difficulty-options b { font-size: 12px; }
+.difficulty-options small {
+  display: block;
+  font-size: 10px;
+  margin-top: 7px;
+  color: #596d4e;
+}
 .compact {
   max-width: 420px;
   padding: 38px;
