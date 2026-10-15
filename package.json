@@ -10,7 +10,6 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@vercel/functions": "^3.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.180.0"

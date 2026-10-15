@@ -778,7 +778,7 @@ function App() {
         <span>
           금색 원: 건설 / 선택 <i>·</i> P: 일시정지 <i>·</i> 5공세마다 보스
         </span>
-        <a href="/logout">왕국 나가기 ↗</a>
+        <span>나만의 작은 왕국</span>
       </div>
       {toast && (
         <div className="toast" role="status">

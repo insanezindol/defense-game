@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-로컬 기본 입장 코드는 `PLAYGAME`입니다. 주소는 Vite 실행 출력에 표시됩니다. 같은 Wi-Fi에서 모바일로 개발 PC의 LAN 주소에 접속할 수 있습니다. Windows 방화벽에서 개발 서버 접속을 허용해야 할 수 있습니다.
+입장 코드 없이 바로 게임에 접속할 수 있습니다. 주소는 Vite 실행 출력에 표시됩니다. 같은 Wi-Fi에서 모바일로 개발 PC의 LAN 주소에 접속할 수 있습니다. Windows 방화벽에서 개발 서버 접속을 허용해야 할 수 있습니다.
 
 ```sh
 npm test
@@ -34,15 +34,8 @@ npm run preview
 
 GitHub **private** 저장소를 Vercel에 가져온 뒤 Framework: Vite, Build: `npm run build`, Output: `dist`로 설정합니다. `vercel.json`에 동일한 설정이 있습니다.
 
-환경 변수는 Production 및 Preview에 설정하고 배포하세요.
+입장 코드나 인증 환경 변수 없이 바로 플레이할 수 있습니다. 배포 주소를 아는 사람은 누구나 게임에 접속할 수 있으며, GitHub 저장소는 private으로 유지합니다.
 
-| 변수           | 값                                            |
-| -------------- | --------------------------------------------- |
-| PLAY_CODE      | 사용자가 지정한 입장 코드                     |
-| SESSION_SECRET | 안전한 난수 32자 이상. Git에 저장하지 마세요. |
-
-서버에서 입장 코드를 검사하고 HMAC 서명된 7일 HttpOnly 쿠키로 게임 파일을 보호합니다. 운영 환경에 SESSION_SECRET이 없으면 접속을 차단합니다. 코드만 아는 사람도 입장할 수 있는 공유 코드 방식이며, 계정 기반 인증은 포함하지 않습니다. `/logout`으로 로그아웃합니다. 코드를 바꾸는 경우 기존 세션을 무효화하려면 SESSION_SECRET도 교체하세요.
-
-인증 명세: `docs/auth-contract.md`. 게임 규칙: `src/game.ts`. 화면·조작: `src/main.tsx`. 3D 모델: `src/world.ts`.
+게임 규칙: `src/game.ts`. 화면·조작: `src/main.tsx`. 3D 모델: `src/world.ts`.
 
 외부 리소스는 선택적 Google Fonts 폰트뿐이며, 연결이 안 되면 시스템 폰트를 사용합니다. WebGL을 지원하는 최신 데스크톱/모바일 브라우저가 필요합니다.
