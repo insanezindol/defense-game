@@ -37,8 +37,7 @@ function DifficultyPicker({ value, onChange }: {
           <label key={difficulty}>
             <input type="radio" name="difficulty" value={difficulty}
               checked={value === difficulty} onChange={() => onChange(difficulty)} />
-            <span><b>{DIFFICULTIES[difficulty].label}</b>
-              <small>적 체력 ×{DIFFICULTIES[difficulty].enemyHpMultiplier}</small></span>
+            <span><b>{DIFFICULTIES[difficulty].label}</b></span>
           </label>
         ))}
       </div>

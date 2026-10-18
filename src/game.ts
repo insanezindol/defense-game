@@ -2,9 +2,9 @@ export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
 // Balance tuning: only enemy HP scales, keeping rewards and pacing unchanged.
 export const DIFFICULTIES = {
-  easy: { label: "Easy", enemyHpMultiplier: 1 },
-  normal: { label: "Normal", enemyHpMultiplier: 1.5 },
-  hard: { label: "Hard", enemyHpMultiplier: 2 },
+  easy: { label: "Easy", enemyHpMultiplier: 2 },
+  normal: { label: "Normal", enemyHpMultiplier: 3 },
+  hard: { label: "Hard", enemyHpMultiplier: 4 },
 } as const;
 export type Difficulty = keyof typeof DIFFICULTIES;
 export const DEFAULT_DIFFICULTY: Difficulty = "easy";
@@ -360,7 +360,7 @@ export function restore(raw: string | null): GameState | null {
   if (!raw) return null;
   try {
     const s = JSON.parse(raw) as GameState;
-    // Saves created before difficulty selection used today's Easy balance.
+    // Saves created before difficulty selection continue with the Easy preset.
     s.difficulty ??= DEFAULT_DIFFICULTY;
     if (
       s.version !== 1 ||
