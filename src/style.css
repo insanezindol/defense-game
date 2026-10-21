@@ -189,9 +189,9 @@ button {
   overflow: hidden;
   background: radial-gradient(
     ellipse at 45% 50%,
-    #c6d0b1 0%,
-    #a7b99f 70%,
-    #9baf97 100%
+    #284652 0%,
+    #172f3d 70%,
+    #102531 100%
   );
 }
 .chapter {
@@ -209,7 +209,7 @@ button {
   font-weight: 700;
 }
 .chapter .eyebrow {
-  color: #546d4f;
+  color: #a8d4dc;
   font-size: 9px;
   display: flex;
   align-items: center;
@@ -226,12 +226,13 @@ button {
   font-size: 29px;
   font-weight: 700;
   letter-spacing: -1.5px;
-  color: #314c36;
+  color: #f1e7cc;
+  text-shadow: 0 2px 16px #061723;
 }
 .chapter p {
   font-size: 11px;
   margin: 0;
-  color: #6c7f61;
+  color: #b3c6c5;
 }
 .wave-badge {
   position: absolute;
@@ -293,7 +294,7 @@ button {
   transform: translateX(-50%);
   font-size: 9px;
   letter-spacing: 1.5px;
-  color: #526c48;
+  color: #b8d1d2;
   opacity: 0.65;
   pointer-events: none;
 }
@@ -334,7 +335,7 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #526748;
+  color: #c0d4d0;
   font-size: 10px;
 }
 .live-tag i {

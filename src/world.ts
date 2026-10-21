@@ -1,16 +1,24 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { createCharacter, animateCharacter, fitCamera, projectilePosition } from "./world-models";
+import { BattleParticles } from "./world-particles";
 import { PADS, TOWERS, type GameState } from "./game";
 const COLORS = {
-  grass: "#8fa46d",
+  grass: "#304f45",
   stone: "#d6c6a1",
-  path: "#c9b88b",
+  path: "#766d62",
   blue: "#417a92",
   dark: "#344838",
 };
 export class World {
   scene = new THREE.Scene();
   renderer: THREE.WebGLRenderer;
-  camera = new THREE.OrthographicCamera();
+  camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1200);
   root = new THREE.Group();
   hero = new THREE.Group();
   enemies = new Map<number, THREE.Group>();
@@ -20,34 +28,62 @@ export class World {
   ring: THREE.Mesh;
   resizeObserver: ResizeObserver;
   private materials = new Map<string, THREE.MeshStandardMaterial>();
+  private composer: EffectComposer;
+  private environment: THREE.WebGLRenderTarget;
+  private particles = new BattleParticles();
+  private effects: { group: THREE.Group; age: number; life: number; frost: boolean }[] = [];
+  private torches: THREE.PointLight[] = [];
+  private banners: THREE.Mesh[] = [];
+  private lastTime = 0;
+  private lastHp = 100;
+  private lastWave = 0;
+  private heroPosition = new THREE.Vector2();
+  private cameraPosition = new THREE.Vector3();
+  private pointerStart = new THREE.Vector2();
+  private shake = 0;
   constructor(
     public host: HTMLElement,
     public onPad: (pad: number) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      alpha: true,
+      alpha: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, host.clientWidth < 700 ? 1.25 : 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.autoUpdate = true;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.setClearColor("#a6bbaa", 0);
+    this.renderer.setClearColor("#132a37", 1);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.85;
     this.renderer.domElement.setAttribute(
       "aria-label",
       "3D 전장. 금색 원을 눌러 건물을 건설하세요.",
     );
     host.appendChild(this.renderer.domElement);
     this.scene.add(this.root);
-    this.scene.fog = new THREE.Fog("#a3b69d", 55, 95);
-    this.scene.add(new THREE.HemisphereLight("#fff5d7", "#647762", 2.7));
-    const sun = new THREE.DirectionalLight("#fff0c9", 3.4);
-    sun.position.set(-12, 25, 12);
+    this.scene.fog = new THREE.FogExp2("#132a37", 0.008);
+    this.scene.background = new THREE.Color('#08151f');
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 24, 16), new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false,
+      vertexShader: 'varying vec3 direction; void main(){ direction = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `varying vec3 direction;
+        void main(){ float h = normalize(direction).y;
+          vec3 horizon = vec3(0.045, 0.105, 0.135);
+          vec3 zenith = vec3(0.006, 0.015, 0.035);
+          gl_FragColor = vec4(mix(horizon, zenith, smoothstep(0.0, 0.75, h)), 1.0); }`,
+    }));
+    sky.userData.effectMaterial = true;
+    this.scene.add(sky);
+    this.scene.add(new THREE.HemisphereLight("#b2d8f6", "#273b38", 0.85));
+    const sun = new THREE.DirectionalLight("#ffdbad", 2.1);
+    sun.position.set(-15, 24, 8);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
+    const shadowSize = host.clientWidth < 700 ? 1024 : 2048;
+    sun.shadow.mapSize.set(shadowSize, shadowSize);
     Object.assign(sun.shadow.camera, {
       left: -22,
       right: 22,
@@ -57,9 +93,23 @@ export class World {
       far: 65,
     });
     sun.shadow.bias = -0.001;
+    sun.shadow.normalBias = 0.035;
     this.scene.add(sun);
+    const rim = new THREE.DirectionalLight("#66baff", 1.6);
+    rim.position.set(12, 8, -14);
+    this.scene.add(rim);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const room = new RoomEnvironment();
+    this.environment = pmrem.fromScene(room, 0.04);
+    this.scene.environment = this.environment.texture;
+    this.scene.environmentIntensity = 0.45;
+    room.dispose();
+    pmrem.dispose();
     this.terrain();
-    this.hero = this.person("#487e9c", "#e9c38b", false);
+    this.details();
+    this.batchTerrain();
+    this.scene.add(this.particles.points);
+    this.hero = createCharacter("hero", this.materials);
     this.root.add(this.hero);
     this.ring = this.mesh(
       new THREE.RingGeometry(0.65, 0.82, 40),
@@ -81,9 +131,14 @@ export class World {
     aura.rotation.x = -Math.PI / 2;
     (aura.material as THREE.MeshStandardMaterial).transparent = true;
     (aura.material as THREE.MeshStandardMaterial).opacity = 0.2;
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.5, 1.15));
+    this.composer.addPass(new OutputPass());
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
+    host.addEventListener("pointerdown", this.pointerDown);
     host.addEventListener("pointerup", this.pick);
   }
   private material(color: string) {
@@ -92,8 +147,8 @@ export class World {
         color,
         new THREE.MeshStandardMaterial({
           color,
-          roughness: 0.92,
-          flatShading: true,
+          roughness: 0.78,
+          metalness: 0.08,
         }),
       );
     return this.materials.get(color)!;
@@ -151,8 +206,160 @@ export class World {
     g.scale.setScalar(scale);
     this.root.add(g);
     this.cylinder(g, "#7e6e4d", 0, 0.6, 0, 0.16, 0.22, 1.2, 5);
-    this.cylinder(g, "#435e43", 0, 1.45, 0, 0, 1.05, 1.8, 6);
-    this.cylinder(g, "#56744f", 0, 2.2, 0, 0, 0.8, 1.7, 6);
+    this.cylinder(g, "#193e3c", 0, 1.35, 0, 0.15, 1.1, 1.8, 9);
+    this.cylinder(g, "#28574b", 0, 2.05, 0, 0.08, 0.9, 1.7, 9);
+    this.cylinder(g, "#39765d", 0, 2.75, 0, 0, 0.62, 1.5, 9);
+  }
+  private glow(geometry: THREE.BufferGeometry, color: string, parent: THREE.Object3D, x = 0, y = 0, z = 0) {
+    const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(2.4),
+      transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    mesh.userData.effectMaterial = true;
+    parent.add(mesh);
+    return mesh;
+  }
+  private impact(x: number, z: number, frost: boolean, large: boolean) {
+    if (this.effects.length >= 32) {
+      this.remove(this.effects.shift()!.group);
+    }
+    const group = new THREE.Group();
+    group.position.set(x, 0.2, z);
+    group.userData.radius = frost && large ? 8.8 : large ? 2.8 : 1.2;
+    this.root.add(group);
+    const color = frost ? '#72dcff' : '#ffac53';
+    const ring = this.glow(new THREE.TorusGeometry(1, 0.035, 5, 48), color, group);
+    ring.rotation.x = Math.PI / 2;
+    if (frost) {
+      const inner = this.glow(new THREE.RingGeometry(0.83, 0.88, 48), '#c6f7ff', group, 0, 0.03, 0);
+      inner.rotation.x = -Math.PI / 2;
+      for (let i = 0; i < (large ? 16 : 6); i++) {
+        const angle = i * Math.PI * 2 / (large ? 16 : 6);
+        const spike = this.glow(new THREE.ConeGeometry(0.045, 0.3 + (i % 3) * 0.13, 5), color, group,
+          Math.cos(angle) * 0.8, 0.1, Math.sin(angle) * 0.8);
+        spike.rotation.z = Math.cos(angle) * -0.3;
+      }
+    } else if (large) {
+      const fireball = this.glow(new THREE.IcosahedronGeometry(0.5, 1), '#ffcc66', group, 0, 0.35, 0);
+      fireball.scale.y = 1.6;
+      for (let i = 0; i < 5; i++) {
+        const smoke = this.glow(new THREE.IcosahedronGeometry(0.25, 1), '#746d72', group,
+          Math.sin(i * 2.4) * 0.35, 0.5 + i * 0.17, Math.cos(i * 2.4) * 0.35);
+        (smoke.material as THREE.MeshBasicMaterial).blending = THREE.NormalBlending;
+      }
+    }
+    this.particles.emit(x, 0.8, z, color, large ? 65 : 10, large ? 5 : 1.8, frost && large ? 1.3 : 0.6);
+    this.effects.push({ group, age: 0, life: frost && large ? 1.1 : large ? 0.6 : 0.3, frost });
+    if (large) this.shake = frost ? 0.12 : 0.2;
+  }
+  private details() {
+    // Stable placement keeps the landscape identical after loading a saved game.
+    const random = (n: number) => THREE.MathUtils.euclideanModulo(Math.sin(n * 127.1 + 31.7) * 43758.5453, 1);
+    for (let z = -12; z < 8; z += 1.15) {
+      for (let x = -2; x <= 2; x += 1) {
+        const n = (z + 13) * 11 + x;
+        const tile = this.box(this.root, ['#727b76', '#85887c', '#626f6c'][Math.floor(random(n) * 3)],
+          x + (Math.floor(z) % 2) * 0.12, 0.13, z, 0.89, 0.12, 1.02);
+        tile.rotation.y = (random(n + 1) - 0.5) * 0.1;
+      }
+    }
+    for (let i = 0; i < 650; i++) {
+      const x = random(i * 3) * 30 - 15, z = random(i * 3 + 1) * 26 - 13;
+      if (Math.abs(x) < 3 || z > 7 || PADS.some(p => Math.hypot(p.x - x, p.z - z) < 1.65)) continue;
+      const blade = this.mesh(new THREE.ConeGeometry(0.06, 0.18 + random(i + 7) * 0.24, 3),
+        i % 2 ? '#4f7758' : '#688266', this.root, x, 0.17, z);
+      blade.rotation.z = (random(i + 9) - 0.5) * 0.6;
+      if (i % 17 === 0) this.mesh(new THREE.SphereGeometry(0.07, 5, 4), '#d6a772', this.root, x, 0.35, z);
+    }
+    for (let i = 0; i < 35; i++) {
+      const side = i % 2 ? -1 : 1, z = -13 + (i / 35) * 27;
+      const rock = this.mesh(new THREE.DodecahedronGeometry(0.6 + random(i) * 0.7, 1),
+        i % 3 ? '#455659' : '#65706b', this.root, side * (15.2 + random(i + 10) * 0.7), -0.5, z);
+      rock.scale.set(1, 0.8 + random(i + 4), 1.3);
+      rock.rotation.set(random(i), random(i + 2) * 3, 0);
+    }
+    const ridge = new THREE.PlaneGeometry(110, 40, 55, 20);
+    ridge.rotateX(-Math.PI / 2);
+    const vertices = ridge.attributes.position;
+    const ridgeColors = new Float32Array(vertices.count * 3);
+    for (let i = 0; i < vertices.count; i++) {
+      const x = vertices.getX(i), z = vertices.getZ(i);
+      const ridgeHeight = Math.max(0, 1 - Math.abs(z + 3) / 22);
+      const height = ridgeHeight * (5 + Math.abs(Math.sin(x * 0.14)) * 10 + Math.sin(x * 0.41 + z * 0.3) * 2 + random(i) * 1.4);
+      vertices.setY(i, height);
+      const tint = new THREE.Color().lerpColors(new THREE.Color('#17323c'), new THREE.Color('#49646b'), height / 20);
+      ridgeColors.set(tint.toArray(), i * 3);
+    }
+    ridge.setAttribute('color', new THREE.BufferAttribute(ridgeColors, 3));
+    ridge.computeVertexNormals();
+    const mountains = this.mesh(ridge, '#ffffff', this.root, 0, -4, -39);
+    const ridgeMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+    this.materials.set('mountain-ridge', ridgeMaterial);
+    mountains.material = ridgeMaterial;
+    // Raised parapets, buttresses, stone courses and gold roof ridges.
+    for (const x of [-11, -8, -5, 5, 8, 11]) {
+      this.box(this.root, '#7b8681', x, 0.8, 8.43, 0.38, 1.8, 0.65);
+      for (const y of [0.4, 0.9, 1.4]) this.box(this.root, '#8d9690', x, y, 8.51, 2.8, 0.035, 0.03);
+    }
+    for (const x of [-3.3, 3.3]) {
+      this.cylinder(this.root, '#9aa49b', x, 0.25, 9.2, 1.2, 1.3, 0.35, 12);
+      this.cylinder(this.root, '#b2b8a7', x, 3.25, 9.2, 1.12, 1.12, 0.2, 12);
+      this.cylinder(this.root, '#c7a969', x, 4.7, 9.2, 0.035, 0.08, 0.7, 8);
+    }
+    for (const x of [-2, 2]) {
+      this.cylinder(this.root, '#929c95', x, 3.6, 12, 0.68, 0.8, 4, 12);
+      this.cylinder(this.root, '#234f63', x, 6.1, 12, 0, 1, 1.3, 12);
+      this.cylinder(this.root, '#dbb775', x, 6.9, 12, 0.02, 0.05, 0.45, 8);
+    }
+    this.box(this.root, '#45555a', 0, 0.9, 13.56, 1, 1.8, 0.08);
+    for (const x of [-0.62, 0.62]) this.box(this.root, '#abb19f', x, 0.9, 13.65, 0.22, 1.8, 0.28);
+    this.box(this.root, '#abb19f', 0, 1.86, 13.65, 1.46, 0.22, 0.28);
+    for (let i = 0; i < 3; i++) this.box(this.root, '#7e8a83', 0, 0.1 + i * 0.03, 14.2 - i * 0.23, 1.5 - i * 0.1, 0.17, 0.25);
+    for (const x of [-5.5, 5.5, -11.7, 11.7]) {
+      const z = Math.abs(x) > 10 ? 1 : 7.8;
+      this.cylinder(this.root, '#45505a', x, 0.85, z, 0.09, 0.15, 1.7, 8);
+      this.cylinder(this.root, '#9c7950', x, 1.75, z, 0.23, 0.12, 0.25, 8);
+      const flame = this.glow(new THREE.SphereGeometry(0.15, 8, 6), '#ffad55', this.root, x, 2, z);
+      flame.scale.y = 1.8;
+      const light = new THREE.PointLight('#ffab5c', 8, 7, 2);
+      light.position.set(x, 2, z);
+      this.root.add(light);
+      this.torches.push(light);
+    }
+    for (const x of [-8, 8]) {
+      const banner = this.box(this.root, '#235c79', x + 0.5, 3.5, 8.1, 0.9, 1.2, 0.04);
+      this.box(this.root, '#d9b76a', x + 0.5, 3.5, 8.06, 0.12, 0.6, 0.03);
+      this.banners.push(banner);
+    }
+    for (const pad of PADS) {
+      const ring = this.glow(new THREE.TorusGeometry(1.3, 0.025, 5, 40), '#d0ad65', this.root, pad.x, 0.23, pad.z);
+      ring.rotation.x = -Math.PI / 2;
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2;
+        this.box(this.root, '#9e967d', pad.x + Math.cos(a) * 1.5, 0.24, pad.z + Math.sin(a) * 1.5, 0.27, 0.28, 0.27);
+      }
+    }
+  }
+  private batchTerrain() {
+    this.root.updateMatrixWorld(true);
+    const batches = new Map<THREE.Material, THREE.Mesh[]>();
+    this.root.traverse(obj => {
+      if (!(obj instanceof THREE.Mesh) || !(obj.material instanceof THREE.MeshStandardMaterial) ||
+        this.pads.includes(obj) || this.banners.includes(obj)) return;
+      const list = batches.get(obj.material) ?? [];
+      list.push(obj);
+      batches.set(obj.material, list);
+    });
+    for (const [material, meshes] of batches) {
+      const geometries = meshes.map(mesh => mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+      const geometry = mergeGeometries(geometries);
+      geometries.forEach(geo => geo.dispose());
+      if (!geometry) continue;
+      const batch = new THREE.Mesh(geometry, material);
+      batch.castShadow = true; batch.receiveShadow = true;
+      for (const mesh of meshes) { mesh.removeFromParent(); mesh.geometry.dispose(); }
+      this.root.add(batch);
+    }
   }
   terrain() {
     this.box(this.root, "#667755", 0, -0.65, 0, 32, 1.2, 29);
@@ -250,75 +457,30 @@ export class World {
         );
     });
   }
-  person(color: string, skin: string, enemy: boolean, boss = false) {
-    const g = new THREE.Group();
-    this.cylinder(g, color, 0, 0.68, 0, 0.36, 0.47, 0.8, 6);
-    this.mesh(new THREE.IcosahedronGeometry(0.3, 0), skin, g, 0, 1.29, 0);
-    this.cylinder(
-      g,
-      enemy ? "#65534a" : "#ccd8d0",
-      0,
-      1.48,
-      0,
-      0.31,
-      0.34,
-      0.29,
-      6,
-    );
-    this.box(g, enemy ? "#564f43" : "#24495b", 0, 0.85, -0.28, 0.65, 0.8, 0.16);
-    for (const x of [-0.21, 0.21])
-      this.box(g, "#3f493e", x, 0.18, 0, 0.2, 0.4, 0.25);
-    this.box(g, "#c8cfbb", 0.55, 0.9, 0.18, 0.1, 0.8, 0.12).rotation.z = -0.5;
-    this.cylinder(
-      g,
-      enemy ? "#876a50" : "#dcbd77",
-      -0.48,
-      0.83,
-      0.1,
-      0.27,
-      0.27,
-      0.1,
-      6,
-    ).rotation.x = Math.PI / 2;
-    if (boss) {
-      this.cylinder(g, "#d6b76b", 0, 1.77, 0, 0.34, 0.28, 0.3, 5);
-      g.scale.setScalar(1.9);
-    }
-    const bg = this.box(g, "#4d4136", 0, 1.95, 0, 1, 0.1, 0.08);
-    bg.name = "hp-bg";
-    const hp = this.box(
-      g,
-      enemy ? "#d88f73" : "#9cc894",
-      0,
-      1.95,
-      0.05,
-      1,
-      0.1,
-      0.08,
-    );
-    hp.name = "hp";
-    g.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.castShadow = false;
-    });
-    return g;
-  }
   tower(kind: keyof typeof TOWERS, level: number) {
     const g = new THREE.Group();
     this.cylinder(g, "#c9c4a5", 0, 0.6, 0, 0.8, 1.08, 1.2, 8);
     this.cylinder(g, "#dcd4b4", 0, 1.35, 0, 1, 0.85, 0.3, 8);
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      this.box(g, '#a7aea1', Math.cos(angle) * 0.85, 1.56, Math.sin(angle) * 0.85, 0.25, 0.35, 0.25);
+    }
+    const turret = new THREE.Group();
+    turret.name = 'turret';
+    g.add(turret);
     if (kind === "arrow") {
       for (const x of [-0.55, 0.55])
         this.box(g, "#786c4b", x, 1.95, 0, 0.18, 1, 0.3);
       this.cylinder(g, "#5e7e67", 0, 2.55, 0, 0, 1.28, 1, 4).rotation.y =
         Math.PI / 4;
-      this.box(g, "#d0af66", 0, 1.95, 0.35, 1.3, 0.13, 0.25);
-      this.box(g, "#766448", 0, 1.95, 0.65, 0.13, 0.15, 1.1);
+      this.box(turret, "#d0af66", 0, 1.95, -0.35, 1.3, 0.13, 0.25);
+      this.box(turret, "#766448", 0, 1.95, -0.65, 0.13, 0.15, 1.1);
     } else if (kind === "cannon") {
-      this.box(g, "#6e6450", 0, 1.7, 0, 1.1, 0.5, 0.9);
-      this.cylinder(g, "#455957", 0, 1.95, -0.6, 0.4, 0.46, 1.4, 8).rotation.x =
+      this.box(turret, "#6e6450", 0, 1.7, 0, 1.1, 0.5, 0.9);
+      this.cylinder(turret, "#455957", 0, 1.95, -0.6, 0.4, 0.46, 1.4, 12).rotation.x =
         Math.PI / 2;
       this.cylinder(
-        g,
+        turret,
         "#263d37",
         0,
         1.95,
@@ -330,7 +492,7 @@ export class World {
       ).rotation.x = Math.PI / 2;
     } else {
       this.cylinder(g, "#6a8e8b", 0, 1.8, 0, 0.3, 0.5, 0.9, 6);
-      this.mesh(new THREE.OctahedronGeometry(0.65), "#a6e0dd", g, 0, 2.65, 0);
+      this.glow(new THREE.OctahedronGeometry(0.65), "#7adeff", g, 0, 2.65, 0).name = 'crystal';
       const ring = this.mesh(
         new THREE.TorusGeometry(0.75, 0.06, 5, 20),
         "#e3d28e",
@@ -345,7 +507,9 @@ export class World {
       this.box(g, "#f1d58d", -0.5 + i * 0.25, 0.9, 1, 0.12, 0.18, 0.07);
     return g;
   }
+  private pointerDown = (event: PointerEvent) => { this.pointerStart.set(event.clientX, event.clientY); };
   pick = (event: PointerEvent) => {
+    if (event.button !== 0 || this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 12) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const mouse = new THREE.Vector2(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -368,149 +532,188 @@ export class World {
   };
   resize() {
     const { width, height } = this.host.getBoundingClientRect();
-    const aspect = width / Math.max(height, 1),
-      size = Math.max(18, 18 / aspect);
-    Object.assign(this.camera, {
-      left: -size * aspect,
-      right: size * aspect,
-      top: size,
-      bottom: -size,
-      near: 0.1,
-      far: 110,
-    });
-    this.camera.position.set(0, 30, 26);
-    this.camera.lookAt(0, 0, 0);
-    this.camera.updateProjectionMatrix();
+    if (width < 1 || height < 1) return;
+    fitCamera(this.camera, width / height);
+    this.cameraPosition.copy(this.camera.position);
     this.renderer.setSize(width, height);
+    this.composer.setSize(width, height);
+    this.particles.material.uniforms.pixelRatio.value = this.renderer.getPixelRatio();
   }
   private remove(g: THREE.Group) {
     g.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (obj instanceof THREE.SkinnedMesh) obj.skeleton.dispose();
+        if (obj.userData.effectMaterial) (obj.material as THREE.Material).dispose();
+      }
     });
     this.root.remove(g);
   }
   draw(s: GameState, selected: number | null) {
+    const reset = s.time < this.lastTime || (s.wave === 0 && this.lastWave > 0);
+    const dt = reset ? 0 : Math.min(0.1, Math.max(0, s.time - this.lastTime));
+    this.lastTime = s.time;
+    this.lastWave = s.wave;
+    if (reset) {
+      for (const effect of this.effects) this.remove(effect.group);
+      this.effects = [];
+      this.particles.update(10);
+      this.shake = 0;
+    }
+    const moving = dt === 0 ? Boolean(this.hero.userData.walking) : Math.hypot(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y) > 0.001;
+    this.hero.userData.walking = moving;
+    const target = s.enemies.filter(e => Math.hypot(e.x - s.hero.x, e.z - s.hero.z) < 7.8)
+      .sort((a, b) => b.z - a.z)[0];
+    if (target) this.hero.rotation.y = Math.atan2(target.x - s.hero.x, target.z - s.hero.z);
+    else if (moving && dt > 0) this.hero.rotation.y = Math.atan2(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y);
+    this.heroPosition.set(s.hero.x, s.hero.z);
     this.hero.position.set(s.hero.x, 0.12, s.hero.z);
     this.ring.position.set(s.hero.x, 0.15, s.hero.z);
-    this.hero.rotation.y = Math.sin(s.time * 0.8) * 0.12;
-    this.hero.position.y = 0.12 + Math.sin(s.time * 3) * 0.025;
-    for (const [id, g] of this.enemies)
-      if (!s.enemies.some((e) => e.id === id)) {
-        this.remove(g);
+    animateCharacter(this.hero, s.time, moving, Boolean(target && s.hero.cooldown > 0.28));
+    this.hero.getObjectByName('health')!.quaternion.copy(this.hero.quaternion.clone().invert().multiply(this.camera.quaternion));
+    for (const [id, group] of this.enemies) {
+      if (!s.enemies.some(e => e.id === id)) {
+        if (!reset) this.particles.emit(group.position.x, 0.8, group.position.z, '#e8a666', 18, 2.4);
+        this.remove(group);
         this.enemies.delete(id);
       }
-    for (const e of s.enemies) {
-      let g = this.enemies.get(e.id);
-      if (!g) {
-        g = this.person(
-          e.kind === "boss"
-            ? "#67517c"
-            : e.kind === "brute"
-              ? "#826a57"
-              : "#af7058",
-          "#d5b383",
-          true,
-          e.kind === "boss",
-        );
-        this.enemies.set(e.id, g);
-        this.root.add(g);
-        if (e.kind === "runner") g.scale.setScalar(0.8);
-      }
-      g.position.set(
-        e.x,
-        0.09 + Math.abs(Math.sin(s.time * e.speed * 7 + e.id)) * 0.08,
-        e.z,
-      );
-      g.rotation.y = Math.atan2(-e.x, 10 - e.z);
-      g.getObjectByName("hp")!.scale.x = Math.max(0, e.hp / e.maxHp);
     }
-    for (const [pad, item] of this.towers)
-      if (!s.towers.some((t) => t.pad === pad)) {
+    for (const e of s.enemies) {
+      let group = this.enemies.get(e.id);
+      if (!group) {
+        group = createCharacter(e.kind, this.materials);
+        this.enemies.set(e.id, group);
+        this.root.add(group);
+      }
+      if (group.userData.hp !== undefined && e.hp < group.userData.hp) {
+        this.particles.emit(e.x, 1, e.z, e.slow > 0 ? '#70dfff' : '#ffcc7d', 7, 1.6, 0.4);
+      }
+      group.userData.hp = e.hp;
+      group.position.set(e.x, 0.12, e.z);
+      group.rotation.y = Math.atan2(-e.x, 10 - e.z);
+      animateCharacter(group, s.time * e.speed * (e.slow > 0 ? 0.45 : 1) + e.id, true, e.z > 7);
+      group.getObjectByName('health')!.quaternion.copy(group.quaternion.clone().invert().multiply(this.camera.quaternion));
+      const hp = group.getObjectByName('hp')!;
+      hp.scale.x = Math.max(0, e.hp / e.maxHp);
+      hp.position.x = -(1 - hp.scale.x) * 0.44;
+    }
+    for (const [pad, item] of this.towers) {
+      if (!s.towers.some(t => t.pad === pad)) {
         this.remove(item.group);
         this.towers.delete(pad);
       }
-    for (const t of s.towers) {
-      const old = this.towers.get(t.pad);
-      if (!old || old.level !== t.level) {
+    }
+    for (const tower of s.towers) {
+      const old = this.towers.get(tower.pad), pad = PADS[tower.pad];
+      if (!old || old.level !== tower.level) {
         if (old) this.remove(old.group);
-        const g = this.tower(t.kind, t.level),
-          p = PADS[t.pad];
-        g.position.set(p.x, 0.15, p.z);
-        this.root.add(g);
-        this.towers.set(t.pad, { level: t.level, group: g });
-        this.renderer.shadowMap.needsUpdate = true;
+        const group = this.tower(tower.kind, tower.level);
+        group.position.set(pad.x, 0.15, pad.z);
+        this.root.add(group);
+        this.towers.set(tower.pad, { level: tower.level, group });
+        if (!reset) this.particles.emit(pad.x, 0.5, pad.z, '#ffd28c', 24, 2);
       }
+      const group = this.towers.get(tower.pad)!.group;
+      const crystal = group.getObjectByName('crystal');
+      if (crystal) {
+        crystal.rotation.y = s.time * 1.4;
+        crystal.position.y = 2.65 + Math.sin(s.time * 2.5) * 0.14;
+      }
+      const turret = group.getObjectByName('turret');
+      const enemy = s.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - pad.x, e.z - pad.z) <= TOWERS[tower.kind].range + (tower.level - 1) * 0.3)
+        .sort((a, b) => b.z - a.z)[0];
+      if (turret && enemy) turret.rotation.y = Math.atan2(pad.x - enemy.x, pad.z - enemy.z);
     }
     this.pads.forEach((pad, i) => {
-      pad.scale.setScalar(
-        selected === i ? 1.15 + Math.sin(s.time * 4) * 0.06 : 1,
-      );
+      pad.scale.setScalar(selected === i ? 1.12 + Math.sin(s.time * 4) * 0.06 : 1);
+      pad.visible = !s.towers.some(t => t.pad === i) || selected === i;
     });
-    for (const [id, g] of this.shots)
-      if (!s.shots.some((p) => p.id === id)) {
-        this.remove(g);
+    for (const [id, group] of this.shots) {
+      if (!s.shots.some(p => p.id === id)) {
+        if (!reset && !group.userData.burst) {
+          const end = group.userData.end as THREE.Vector3;
+          this.impact(end.x, end.z, group.userData.kind === 'frost', group.userData.kind === 'cannon');
+        }
+        this.remove(group);
         this.shots.delete(id);
       }
-    for (const p of s.shots) {
-      let g = this.shots.get(p.id);
-      if (!g) {
-        g = new THREE.Group();
-        this.root.add(g);
-        this.shots.set(p.id, g);
-        if (p.life > 0.3) {
-          const ring = this.mesh(
-            new THREE.TorusGeometry(1, 0.08, 5, 50),
-            "#bde3d3",
-            g,
-          );
-          ring.rotation.x = Math.PI / 2;
-          g.userData.burst = true;
+    }
+    for (const shot of s.shots) {
+      let group = this.shots.get(shot.id);
+      if (!group) {
+        group = new THREE.Group();
+        this.root.add(group);
+        this.shots.set(shot.id, group);
+        group.userData.kind = shot.kind;
+        // Skill origin and target coincide; unlike remaining life this survives a slow frame.
+        group.userData.burst = shot.kind === 'frost' && shot.x === shot.tx && shot.z === shot.tz;
+        if (group.userData.burst) {
+          this.impact(shot.x, shot.z, true, true);
         } else {
-          const points = [
-            new THREE.Vector3(p.x, 1.5, p.z),
-            new THREE.Vector3(p.tx, 1, p.tz),
-          ];
-          const tube = new THREE.TubeGeometry(
-            new THREE.LineCurve3(points[0], points[1]),
-            1,
-            p.kind === "cannon" ? 0.12 : 0.045,
-            4,
-            false,
-          );
-          this.mesh(
-            tube,
-            p.kind === "frost"
-              ? "#b3ebe7"
-              : p.kind === "hero"
-                ? "#fff4bf"
-                : "#e8bc78",
-            g,
-          );
-          this.mesh(
-            new THREE.IcosahedronGeometry(0.22),
-            "#ffe5a0",
-            g,
-            p.tx,
-            1,
-            p.tz,
-          );
+          const color = shot.kind === 'frost' ? '#78deff' : shot.kind === 'cannon' ? '#ff9b42' : '#ffe4a1';
+          this.glow(new THREE.SphereGeometry(shot.kind === 'cannon' ? 0.19 : 0.1, 8, 6), color, group);
+          for (let i = 0; i < 5; i++) {
+            const trail = this.glow(new THREE.SphereGeometry(0.075 * (1 - i / 7), 6, 4), color, group);
+            trail.name = `trail-${i}`;
+          }
+          group.userData.start = new THREE.Vector3(shot.x, shot.kind === 'hero' ? 1.25 : 2.2, shot.z);
+          group.userData.end = new THREE.Vector3(shot.tx, 0.85, shot.tz);
+          this.particles.emit(shot.x, shot.kind === 'hero' ? 1.3 : 2.3, shot.z, color, 4, 0.8, 0.25);
         }
       }
-      if (g.userData.burst) {
-        g.position.set(p.x, 0.3, p.z);
-        g.scale.setScalar((0.75 - p.life) * 14);
+      if (!group.userData.burst) {
+        const t = 1 - shot.life / 0.25;
+        const start = group.userData.start as THREE.Vector3, end = group.userData.end as THREE.Vector3;
+        const point = projectilePosition(start, end, t, shot.kind === 'cannon');
+        group.position.copy(point);
+        for (let i = 0; i < 5; i++) group.getObjectByName(`trail-${i}`)!.position.copy(
+          projectilePosition(start, end, t - (i + 1) * 0.035, shot.kind === 'cannon').sub(point));
       }
     }
-    this.renderer.render(this.scene, this.camera);
+    for (const effect of this.effects) {
+      effect.age += dt;
+      const t = Math.min(1, effect.age / effect.life);
+      effect.group.scale.setScalar(0.2 + t * effect.group.userData.radius);
+      effect.group.rotation.y += dt * 0.7;
+      effect.group.traverse(obj => {
+        if (obj instanceof THREE.Mesh) (obj.material as THREE.MeshBasicMaterial).opacity = (1 - t) * 0.8;
+      });
+    }
+    this.effects = this.effects.filter(effect => {
+      if (effect.age < effect.life) return true;
+      this.remove(effect.group);
+      return false;
+    });
+    this.particles.update(dt);
+    if (dt > 0 && Math.floor(s.time * 16) !== Math.floor((s.time - dt) * 16)) {
+      for (const light of this.torches) this.particles.emit(light.position.x, light.position.y, light.position.z, '#ffb45e', 1, 0.35, 0.8);
+    }
+    this.torches.forEach((light, i) => { light.intensity = 8 + Math.sin(s.time * 9 + i) * 2; });
+    this.banners.forEach((banner, i) => { banner.rotation.y = Math.sin(s.time * 2 + i) * 0.16; });
+    if (!reset && s.hp < this.lastHp) { this.shake = 0.28; this.impact(0, 8.7, false, true); }
+    this.lastHp = s.hp;
+    this.shake = Math.max(0, this.shake - dt);
+    this.camera.position.copy(this.cameraPosition);
+    if (this.shake > 0) this.camera.position.x += Math.sin(s.time * 70) * this.shake * 0.5;
+    this.composer.render();
   }
   dispose() {
     this.resizeObserver.disconnect();
-    this.host.removeEventListener("pointerup", this.pick);
+    this.host.removeEventListener('pointerdown', this.pointerDown);
+    this.host.removeEventListener('pointerup', this.pick);
     this.renderer.setAnimationLoop(null);
-    this.scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+    this.scene.traverse(obj => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        if (obj instanceof THREE.SkinnedMesh) obj.skeleton.dispose();
+        if (obj.userData.effectMaterial) (obj.material as THREE.Material).dispose();
+      }
     });
-    this.materials.forEach((m) => m.dispose());
+    this.materials.forEach(material => material.dispose());
+    this.particles.dispose();
+    for (const pass of this.composer.passes) pass.dispose();
+    this.composer.dispose();
+    this.environment.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
