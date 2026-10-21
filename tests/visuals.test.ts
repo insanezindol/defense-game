@@ -1,7 +1,28 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { createCharacter, animateCharacter, fitCamera, projectilePosition } from "../src/world-models";
+import { createCharacter, animateCharacter, fitCamera, projectilePosition, setCameraZoom } from "../src/world-models";
+
+test("camera zoom enlarges the scene, clamps its range, and survives viewport fitting", () => {
+  const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 1200);
+  fitCamera(camera, 1.5);
+  camera.updateMatrixWorld();
+  const original = new THREE.Vector3(5, 0, 0).project(camera).x;
+  setCameraZoom(camera, 2);
+  assert.ok(new THREE.Vector3(5, 0, 0).project(camera).x > original * 1.9);
+  const position = camera.position.clone();
+  fitCamera(camera, 1.5);
+  assert.equal(camera.zoom, 2);
+  assert.ok(camera.position.distanceTo(position) < 1e-8, 'resize must not counteract user zoom');
+  setCameraZoom(camera, 100);
+  assert.equal(camera.zoom, 2.5);
+  setCameraZoom(camera, 0);
+  assert.equal(camera.zoom, 0.65);
+  setCameraZoom(camera, NaN);
+  assert.equal(camera.zoom, 0.65);
+  setCameraZoom(camera, 1);
+  assert.equal(camera.zoom, 1);
+});
 
 test("the entire battlefield and keep fit in landscape and portrait cameras", () => {
   for (const aspect of [1.8, 1, 0.55]) {

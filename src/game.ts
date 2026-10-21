@@ -1,3 +1,5 @@
+import { routeAroundTowers } from "./navigation";
+
 export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
 // Balance tuning: only enemy HP scales, keeping rewards and pacing unchanged.
@@ -98,6 +100,64 @@ export interface GameState {
   skillCooldown: number;
 }
 export const SAVE_KEY = "emberhold-save-v1";
+const TOWER_RADIUS = 1.35;
+const CHARACTER_RADIUS = { hero: 0.8, grunt: 0.75, runner: 0.6, brute: 0.95, boss: 1.35 };
+// Routes are derived and recalculated after construction, so saves need no navigation state.
+const enemyRoutes = new WeakMap<Enemy, { layout: string; points: { x: number; z: number }[] }>();
+
+function separateFromTowers(position: { x: number; z: number }, towers: Tower[], radius: number, hero = false) {
+  if (hero) {
+    position.x = Math.max(-12, Math.min(12, position.x));
+    position.z = Math.max(-10, Math.min(7.5, position.z));
+  }
+  const clearance = TOWER_RADIUS + radius;
+  if (towers.every(t => Math.hypot(position.x - PADS[t.pad].x, position.z - PADS[t.pad].z) >= clearance - 1e-8)) return;
+  let bestX = position.x, bestZ = position.z, bestDistance = Infinity;
+  const offer = (x: number, z: number) => {
+    if (hero && (x < -12 || x > 12 || z < -10 || z > 7.5)) return;
+    if (towers.some(t => Math.hypot(x - PADS[t.pad].x, z - PADS[t.pad].z) < clearance - 1e-8)) return;
+    const distance = (x - position.x) ** 2 + (z - position.z) ** 2;
+    if (distance < bestDistance) { bestX = x; bestZ = z; bestDistance = distance; }
+  };
+  for (let i = 0; i < towers.length; i++) {
+    const pad = PADS[towers[i].pad];
+    const dx = position.x - pad.x, dz = position.z - pad.z, distance = Math.hypot(dx, dz);
+    offer(pad.x + (distance > 1e-8 ? dx / distance : pad.x < 0 ? 1 : -1) * clearance,
+      pad.z + (distance > 1e-8 ? dz / distance : 0) * clearance);
+    if (hero) {
+      for (const edge of [-12, 12]) {
+        if (Math.abs(edge - pad.x) > clearance) continue;
+        const offset = Math.sqrt(Math.max(0, clearance ** 2 - (edge - pad.x) ** 2));
+        offer(edge, pad.z + offset); offer(edge, pad.z - offset);
+      }
+    }
+    // Circle intersections clear large units from two adjacent towers without pushing them back and forth.
+    for (let j = i + 1; j < towers.length; j++) {
+      const other = PADS[towers[j].pad], ax = other.x - pad.x, az = other.z - pad.z;
+      const spacing = Math.hypot(ax, az);
+      if (spacing > clearance * 2) continue;
+      const h = Math.sqrt(Math.max(0, clearance ** 2 - spacing ** 2 / 4));
+      const mx = (pad.x + other.x) / 2, mz = (pad.z + other.z) / 2;
+      offer(mx - az / spacing * h, mz + ax / spacing * h);
+      offer(mx + az / spacing * h, mz - ax / spacing * h);
+    }
+  }
+  position.x = bestX;
+  position.z = bestZ;
+}
+
+function clearStructureOverlaps(s: GameState) {
+  separateFromTowers(s.hero, s.towers, CHARACTER_RADIUS.hero, true);
+  for (const enemy of s.enemies) separateFromTowers(enemy, s.towers, CHARACTER_RADIUS[enemy.kind]);
+}
+
+function moveCharacter(s: GameState, position: { x: number; z: number }, dx: number, dz: number, radius: number) {
+  separateFromTowers(position, s.towers, radius, position === s.hero);
+  position.x += dx;
+  position.z += dz;
+  separateFromTowers(position, s.towers, radius, position === s.hero);
+}
+
 export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState {
   return {
     version: 1,
@@ -139,6 +199,7 @@ export function build(s: GameState, pad: number, kind: TowerKind) {
     return false;
   s.gold -= TOWERS[kind].cost;
   s.towers.push({ pad, kind, level: 1, cooldown: 0 });
+  clearStructureOverlaps(s);
   return true;
 }
 export function upgradeTower(s: GameState, pad: number) {
@@ -238,16 +299,8 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
   dt = Math.min(0.1, Math.max(0, dt));
   s.time += dt;
   const length = Math.hypot(input.x, input.z);
-  if (length > 0) {
-    s.hero.x = Math.max(
-      -12,
-      Math.min(12, s.hero.x + (input.x / Math.max(1, length)) * dt * 6),
-    );
-    s.hero.z = Math.max(
-      -10,
-      Math.min(7.5, s.hero.z + (input.z / Math.max(1, length)) * dt * 6),
-    );
-  }
+  moveCharacter(s, s.hero, input.x / Math.max(1, length) * dt * 6,
+    input.z / Math.max(1, length) * dt * 6, CHARACTER_RADIUS.hero);
   s.skillCooldown = Math.max(0, s.skillCooldown - dt);
   s.shots = s.shots.filter((p) => (p.life -= dt) > 0);
   if (s.phase !== "battle") return;
@@ -325,15 +378,26 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
       t.cooldown = stats.rate / (1 + (t.level - 1) * 0.13);
     }
   }
+  const layout = s.towers.map(t => t.pad).join(','), centers = s.towers.map(t => PADS[t.pad]);
   for (const e of s.enemies) {
     if (e.hp <= 0) continue;
     e.slow = Math.max(0, e.slow - dt);
     const speed = e.speed * (e.slow > 0 ? 0.45 : 1) * dt;
-    const dx = -e.x,
-      dz = 10 - e.z,
+    separateFromTowers(e, s.towers, CHARACTER_RADIUS[e.kind]);
+    let route = enemyRoutes.get(e);
+    if (!route || route.layout !== layout) {
+      route = { layout, points: routeAroundTowers(e, { x: 0, z: 10 }, centers, TOWER_RADIUS + CHARACTER_RADIUS[e.kind]) };
+      enemyRoutes.set(e, route);
+    }
+    while (route.points.length > 0 && Math.hypot(route.points[0].x - e.x, route.points[0].z - e.z) < 1e-6) route.points.shift();
+    const destination = route.points[0] ?? { x: 0, z: 10 };
+    const dx = destination.x - e.x,
+      dz = destination.z - e.z,
       distance = Math.hypot(dx, dz);
-    e.x += (dx / distance) * speed;
-    e.z += (dz / distance) * speed;
+    if (distance > 0) {
+      const step = Math.min(speed, distance);
+      moveCharacter(s, e, (dx / distance) * step, (dz / distance) * step, CHARACTER_RADIUS[e.kind]);
+    }
     if (e.z >= 8.2) {
       s.hp = Math.max(
         0,
@@ -423,6 +487,7 @@ export function restore(raw: string | null): GameState | null {
       )
         return null;
     s.shots = [];
+    clearStructureOverlaps(s);
     return s;
   } catch {
     return null;

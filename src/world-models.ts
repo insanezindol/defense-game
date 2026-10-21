@@ -3,8 +3,18 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Enemy } from "./game";
 
 type CharacterKind = Enemy["kind"] | "hero";
+export const MIN_ZOOM = 0.65;
+export const MAX_ZOOM = 2.5;
+
+export function setCameraZoom(camera: THREE.PerspectiveCamera, value: number) {
+  if (Number.isFinite(value)) camera.zoom = THREE.MathUtils.clamp(value, MIN_ZOOM, MAX_ZOOM);
+  camera.updateProjectionMatrix();
+  return camera.zoom;
+}
 
 export function fitCamera(camera: THREE.PerspectiveCamera, aspect: number) {
+  const zoom = camera.zoom;
+  camera.zoom = 1;
   camera.aspect = aspect;
   camera.updateProjectionMatrix();
   let distance = 46;
@@ -17,6 +27,8 @@ export function fitCamera(camera: THREE.PerspectiveCamera, aspect: number) {
     if (corners.every(p => { p.project(camera); return Math.abs(p.x) < 0.91 && Math.abs(p.y) < 0.91; })) break;
     distance *= 1.08;
   }
+  camera.zoom = zoom;
+  camera.updateProjectionMatrix();
 }
 
 export function projectilePosition(start: THREE.Vector3, end: THREE.Vector3, progress: number, lob: boolean) {

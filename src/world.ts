@@ -5,7 +5,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { createCharacter, animateCharacter, fitCamera, projectilePosition } from "./world-models";
+import { createCharacter, animateCharacter, fitCamera, projectilePosition, setCameraZoom } from "./world-models";
 import { BattleParticles } from "./world-particles";
 import { PADS, TOWERS, type GameState } from "./game";
 const COLORS = {
@@ -40,10 +40,14 @@ export class World {
   private heroPosition = new THREE.Vector2();
   private cameraPosition = new THREE.Vector3();
   private pointerStart = new THREE.Vector2();
+  private touchPointers = new Map<number, THREE.Vector2>();
+  private pinchDistance = 0;
+  private pinching = false;
   private shake = 0;
   constructor(
     public host: HTMLElement,
     public onPad: (pad: number) => void,
+    private onZoom?: (zoom: number) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -140,6 +144,9 @@ export class World {
     this.resize();
     host.addEventListener("pointerdown", this.pointerDown);
     host.addEventListener("pointerup", this.pick);
+    host.addEventListener("pointermove", this.pointerMove);
+    host.addEventListener("pointercancel", this.pointerCancel);
+    this.renderer.domElement.addEventListener("wheel", this.wheel, { passive: false });
   }
   private material(color: string) {
     if (!this.materials.has(color))
@@ -507,8 +514,49 @@ export class World {
       this.box(g, "#f1d58d", -0.5 + i * 0.25, 0.9, 1, 0.12, 0.18, 0.07);
     return g;
   }
-  private pointerDown = (event: PointerEvent) => { this.pointerStart.set(event.clientX, event.clientY); };
+  setZoom(value: number) {
+    const zoom = setCameraZoom(this.camera, value);
+    this.onZoom?.(zoom);
+  }
+  private wheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.host.clientHeight : 1;
+    this.setZoom(this.camera.zoom * Math.exp(-event.deltaY * unit * 0.0015));
+  };
+  private pointerDown = (event: PointerEvent) => {
+    this.pointerStart.set(event.clientX, event.clientY);
+    if (event.pointerType !== 'touch') return;
+    this.touchPointers.set(event.pointerId, new THREE.Vector2(event.clientX, event.clientY));
+    this.host.setPointerCapture(event.pointerId);
+    if (this.touchPointers.size >= 2) this.pinching = true;
+    if (this.touchPointers.size === 2) {
+      const [a, b] = [...this.touchPointers.values()];
+      this.pinchDistance = a.distanceTo(b);
+    }
+  };
+  private pointerMove = (event: PointerEvent) => {
+    const pointer = this.touchPointers.get(event.pointerId);
+    if (!pointer) return;
+    pointer.set(event.clientX, event.clientY);
+    if (this.touchPointers.size !== 2) return;
+    const [a, b] = [...this.touchPointers.values()];
+    const distance = a.distanceTo(b);
+    if (this.pinchDistance > 0 && distance > 0) this.setZoom(this.camera.zoom * distance / this.pinchDistance);
+    this.pinchDistance = distance;
+  };
+  private pointerCancel = (event: PointerEvent) => {
+    this.touchPointers.delete(event.pointerId);
+    this.pinchDistance = 0;
+    if (this.touchPointers.size === 0) this.pinching = false;
+    else if (this.touchPointers.size === 2) {
+      const [a, b] = [...this.touchPointers.values()];
+      this.pinchDistance = a.distanceTo(b);
+    }
+  };
   pick = (event: PointerEvent) => {
+    const wasPinching = this.pinching;
+    this.pointerCancel(event);
+    if (wasPinching) return;
     if (event.button !== 0 || this.pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 12) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -588,9 +636,13 @@ export class World {
       if (group.userData.hp !== undefined && e.hp < group.userData.hp) {
         this.particles.emit(e.x, 1, e.z, e.slow > 0 ? '#70dfff' : '#ffcc7d', 7, 1.6, 0.4);
       }
+      if (!group.userData.positioned) group.rotation.y = Math.atan2(-e.x, 10 - e.z);
+      else if (Math.hypot(e.x - group.position.x, e.z - group.position.z) > 1e-6) {
+        group.rotation.y = Math.atan2(e.x - group.position.x, e.z - group.position.z);
+      }
+      group.userData.positioned = true;
       group.userData.hp = e.hp;
       group.position.set(e.x, 0.12, e.z);
-      group.rotation.y = Math.atan2(-e.x, 10 - e.z);
       animateCharacter(group, s.time * e.speed * (e.slow > 0 ? 0.45 : 1) + e.id, true, e.z > 7);
       group.getObjectByName('health')!.quaternion.copy(group.quaternion.clone().invert().multiply(this.camera.quaternion));
       const hp = group.getObjectByName('hp')!;
@@ -701,6 +753,11 @@ export class World {
     this.resizeObserver.disconnect();
     this.host.removeEventListener('pointerdown', this.pointerDown);
     this.host.removeEventListener('pointerup', this.pick);
+    this.host.removeEventListener('pointermove', this.pointerMove);
+    this.host.removeEventListener('pointercancel', this.pointerCancel);
+    this.renderer.domElement.removeEventListener('wheel', this.wheel);
+    for (const id of this.touchPointers.keys()) if (this.host.hasPointerCapture(id)) this.host.releasePointerCapture(id);
+    this.touchPointers.clear();
     this.renderer.setAnimationLoop(null);
     this.scene.traverse(obj => {
       if (obj instanceof THREE.Mesh) {

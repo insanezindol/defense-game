@@ -23,6 +23,7 @@ import {
   type TowerKind,
 } from "./game";
 import { World } from "./world";
+import { MIN_ZOOM, MAX_ZOOM } from "./world-models";
 import "./style.css";
 
 function DifficultyPicker({ value, onChange }: {
@@ -129,6 +130,7 @@ function App() {
   const [selected, setSelected] = useState<number | null>(null),
     selectedRef = useRef<number | null>(null);
   const [managementOpen, setManagementOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const [paused, setPaused] = useState(false),
     pausedRef = useRef(false);
   const [help, setHelp] = useState(!initial);
@@ -225,7 +227,7 @@ function App() {
     if (!host.current) return;
     let w: World;
     try {
-      w = new World(host.current, (pad) => setSelected(pad));
+      w = new World(host.current, (pad) => setSelected(pad), setZoom);
       world.current = w;
     } catch {
       setRenderError(
@@ -431,6 +433,14 @@ function App() {
             />
           </div>
           <div className="canvas-host" ref={host} />
+          <div className="zoom-controls" role="group" aria-label="전장 확대·축소">
+            <button aria-label="전장 축소" title="축소" disabled={zoom <= MIN_ZOOM}
+              onClick={() => world.current?.setZoom(zoom / 1.2)}>−</button>
+            <button className="zoom-reset" aria-label="전장 배율 초기화" title="기본 배율로"
+              onClick={() => world.current?.setZoom(1)}>{Math.round(zoom * 100)}%</button>
+            <button aria-label="전장 확대" title="확대" disabled={zoom >= MAX_ZOOM}
+              onClick={() => world.current?.setZoom(zoom * 1.2)}>+</button>
+          </div>
           {renderError && (
             <div className="render-error" role="alert">
               {renderError}

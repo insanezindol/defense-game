@@ -1955,3 +1955,39 @@ html, body, #root {
 @media (max-width: 360px) {
   .app .brand > span:last-child { display: none; }
 }
+.zoom-controls {
+  position: absolute;
+  left: calc(var(--hud-gap) + 12px);
+  bottom: calc(var(--hud-bottom) + 166px);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid #9daea480;
+  border-radius: 11px;
+  background: #1a3549e8;
+  box-shadow: 0 4px 18px #071a2933;
+  backdrop-filter: blur(8px);
+}
+.zoom-controls button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #eff1dc;
+  font-size: 23px;
+  touch-action: manipulation;
+}
+.zoom-controls button:hover:not(:disabled) { background: #a8c4cb26; }
+.zoom-controls .zoom-reset { width: 54px; font-size: 11px; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .zoom-controls { top: calc(var(--hud-top) + 166px); bottom: auto; left: 18px; }
+}
+@media (max-height: 550px) {
+  .zoom-controls { top: auto; bottom: calc(var(--hud-bottom) + 142px); }
+}
+@media (max-height: 550px) and (min-width: 551px) and (max-width: 760px) {
+  .zoom-controls { top: calc(var(--hud-top) + 68px); bottom: auto; left: 50%; transform: translateX(-50%); }
+}
