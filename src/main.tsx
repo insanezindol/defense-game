@@ -128,6 +128,7 @@ function App() {
     world = useRef<World | null>(null);
   const [selected, setSelected] = useState<number | null>(null),
     selectedRef = useRef<number | null>(null);
+  const [managementOpen, setManagementOpen] = useState(false);
   const [paused, setPaused] = useState(false),
     pausedRef = useRef(false);
   const [help, setHelp] = useState(!initial);
@@ -284,7 +285,10 @@ function App() {
         e.preventDefault();
       keys.current.add(k);
       if (e.repeat) return;
-      if (k === "escape") setSelected(null);
+      if (k === "escape") {
+        setSelected(null);
+        setManagementOpen(false);
+      }
       if (k === "p") setPaused((v) => !v);
       if (!pausedRef.current) {
         if (k === "q") skill();
@@ -346,70 +350,69 @@ function App() {
         : 100;
   return (
     <main className="app">
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="Emberhold 홈">
-          <span className="brand-mark">
-            <Icon name="castle" size={26} />
-          </span>
-          <span>
-            EMBERHOLD<small>작은 왕국의 수호자</small>
-          </span>
-        </a>
-        <div className="resources">
-          <div className="resource gold">
-            <Icon name="coin" size={23} />
-            <span>
-              <small>보유 골드</small>
-              <strong>{view.gold.toLocaleString()}</strong>
-            </span>
-          </div>
-          <div className="resource health">
-            <Icon name="shield" size={23} />
-            <span>
-              <small>성문 내구도</small>
-              <strong>
-                {Math.ceil(view.hp)}
-                <em> / {view.maxHp}</em>
-              </strong>
-              <span className="health-meter">
-                <i style={{ width: `${view.hp}%` }} />
-              </span>
-            </span>
-          </div>
-        </div>
-        <div className="top-actions">
-          <button
-            className="icon-button"
-            aria-label={sound ? "소리 끄기" : "소리 켜기"}
-            title="소리"
-            onClick={() => {
-              soundRef.current = !sound;
-              setSound(!sound);
-              tone();
-            }}
-          >
-            <Icon name={sound ? "sound" : "mute"} />
-          </button>
-          <button
-            className="icon-button"
-            aria-label="도움말"
-            onClick={() => setHelp(true)}
-          >
-            ?
-          </button>
-          <button
-            className="icon-button"
-            aria-label={paused ? "계속하기" : "일시정지"}
-            title="일시정지 (P)"
-            onClick={() => setPaused(!paused)}
-          >
-            <Icon name={paused ? "play" : "pause"} />
-          </button>
-        </div>
-      </header>
-
       <section className="game-layout">
         <section className="battlefield" aria-label="전장">
+          <header className="topbar">
+            <a className="brand" href="/" aria-label="Emberhold 홈">
+              <span className="brand-mark">
+                <Icon name="castle" size={26} />
+              </span>
+              <span>
+                EMBERHOLD<small>작은 왕국의 수호자</small>
+              </span>
+            </a>
+            <div className="resources">
+              <div className="resource gold">
+                <Icon name="coin" size={23} />
+                <span>
+                  <small>보유 골드</small>
+                  <strong>{view.gold.toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="resource health">
+                <Icon name="shield" size={23} />
+                <span>
+                  <small>성문 내구도</small>
+                  <strong>
+                    {Math.ceil(view.hp)}
+                    <em> / {view.maxHp}</em>
+                  </strong>
+                  <span className="health-meter">
+                    <i style={{ width: `${view.hp}%` }} />
+                  </span>
+                </span>
+              </div>
+            </div>
+            <div className="top-actions">
+              <button
+                className="icon-button"
+                aria-label={sound ? "소리 끄기" : "소리 켜기"}
+                title="소리"
+                onClick={() => {
+                  soundRef.current = !sound;
+                  setSound(!sound);
+                  tone();
+                }}
+              >
+                <Icon name={sound ? "sound" : "mute"} />
+              </button>
+              <button
+                className="icon-button"
+                aria-label="도움말"
+                onClick={() => setHelp(true)}
+              >
+                ?
+              </button>
+              <button
+                className="icon-button"
+                aria-label={paused ? "계속하기" : "일시정지"}
+                title="일시정지 (P)"
+                onClick={() => setPaused(!paused)}
+              >
+                <Icon name={paused ? "play" : "pause"} />
+              </button>
+            </div>
+          </header>
           <div className="chapter">
             <span className="eyebrow">
               <i /> THE GREENWARD
@@ -490,326 +493,343 @@ function App() {
                 : "Q · 폭풍"}
             </small>
           </button>
-        </section>
 
-        <aside
-          className={`sidebar ${selected !== null ? "is-selected" : ""}`}
-          aria-label="왕국 관리"
-        >
-          <div className="sidebar-header">
-            <div>
-              <span className="eyebrow">KINGDOM DEFENSE</span>
-              <h2>
-                {selected === null
-                  ? "방어선 구축"
-                  : `건설 부지 ${String(selected + 1).padStart(2, "0")}`}
-              </h2>
-            </div>
-            {selected !== null ? (
-              <button
-                className="icon-button close-panel"
-                aria-label="건설 패널 닫기"
-                onClick={() => setSelected(null)}
-              >
-                <Icon name="close" />
-              </button>
-            ) : (
-              <span className="tiny-emblem">
-                <Icon name="castle" size={28} />
-              </span>
-            )}
-          </div>
-          <div className="sidebar-scroll">
-            {selected === null ? (
-              <>
-                <p className="panel-intro">
-                  적들이 오기 전에 준비하세요.
-                  <br />
-                  전장의 <b>금색 원</b>을 선택하면 건설할 수 있어요.
-                </p>
-                <div className="mini-map" aria-label="건설 부지 선택">
-                  {PADS.map((p, i) => (
-                    <button
-                      key={i}
-                      className={
-                        view.towers.some((t) => t.pad === i) ? "occupied" : ""
-                      }
-                      style={{
-                        left: `${50 + p.x * 3.7}%`,
-                        top: `${24 + (p.z + 6) * 4.8}%`,
-                      }}
-                      aria-label={`건설 부지 ${i + 1} 선택`}
-                      onClick={() => setSelected(i)}
-                    >
-                      {view.towers.find((t) => t.pad === i)
-                        ? TOWERS[view.towers.find((t) => t.pad === i)!.kind]
-                            .icon
-                        : "+"}
-                    </button>
-                  ))}
-                  <span className="map-path" />
-                  <span className="map-keep">
-                    <Icon name="castle" size={20} />
-                  </span>
-                  <span className="map-caption">8 BUILD SITES</span>
-                </div>
-                <div className="section-title">
-                  <span>방어 건물</span>
-                  <small>{view.towers.length} / 8 건설됨</small>
-                </div>
-                {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
-                  <div className="tower-preview" key={kind}>
-                    <span style={{ color: TOWERS[kind].color }}>
-                      {TOWERS[kind].icon}
-                    </span>
-                    <div>
-                      <b>{TOWERS[kind].name}</b>
-                      <small>{TOWERS[kind].subtitle}</small>
-                    </div>
-                    <em>
-                      {TOWERS[kind].cost}
-                      <Icon name="coin" size={12} />
-                    </em>
-                  </div>
-                ))}
-              </>
-            ) : tower ? (
-              <>
-                <div className={`tower-portrait ${tower.kind}`}>
-                  <span>{TOWERS[tower.kind].icon}</span>
-                  <small>LEVEL {tower.level}</small>
-                </div>
-                <h3 className="tower-name">{TOWERS[tower.kind].name}</h3>
-                <p className="panel-intro centered">
-                  {TOWERS[tower.kind].subtitle}
-                  <br />이 부지의 든든한 수호자입니다.
-                </p>
-                <div className="tower-stats">
-                  <span>
-                    공격력
-                    <strong>
-                      {Math.round(
-                        TOWERS[tower.kind].damage *
-                          (1 + (tower.level - 1) * 0.7),
-                      )}
-                    </strong>
-                  </span>
-                  <span>
-                    사거리
-                    <strong>
-                      {(
-                        TOWERS[tower.kind].range +
-                        (tower.level - 1) * 0.3
-                      ).toFixed(1)}
-                    </strong>
-                  </span>
-                  <span>
-                    레벨<strong>{tower.level} / 5</strong>
-                  </span>
-                </div>
+          <button
+            className="management-toggle"
+            aria-controls="kingdom-panel"
+            aria-expanded={managementOpen || selected !== null}
+            onClick={() => {
+              if (managementOpen || selected !== null) {
+                setSelected(null);
+                setManagementOpen(false);
+              } else setManagementOpen(true);
+            }}
+          >
+            <Icon name="castle" size={16} /> 건설·관리
+          </button>
+          <aside
+            id="kingdom-panel"
+            className={`sidebar ${selected !== null ? "is-selected" : ""} ${managementOpen || selected !== null ? "is-open" : ""}`}
+            aria-label="왕국 관리"
+          >
+            <div className="sidebar-header">
+              <div>
+                <span className="eyebrow">KINGDOM DEFENSE</span>
+                <h2>
+                  {selected === null
+                    ? "방어선 구축"
+                    : `건설 부지 ${String(selected + 1).padStart(2, "0")}`}
+                </h2>
+              </div>
+              {selected !== null || managementOpen ? (
                 <button
-                  className="primary full"
-                  disabled={
-                    !canAct ||
-                    tower.level >= 5 ||
-                    view.gold < towerUpgradeCost(tower)
-                  }
-                  onClick={() =>
-                    act(
-                      () => upgradeTower(state.current, selected!),
-                      "방어탑을 강화했습니다!",
-                    )
-                  }
+                  className="icon-button close-panel"
+                  aria-label="건설 패널 닫기"
+                  onClick={() => {
+                    setSelected(null);
+                    setManagementOpen(false);
+                  }}
                 >
-                  {tower.level >= 5 ? (
-                    "최대 레벨 달성"
-                  ) : (
-                    <>
-                      건물 강화 <span>{towerUpgradeCost(tower)} G ↑</span>
-                    </>
-                  )}
+                  <Icon name="close" />
                 </button>
-                <p className="fine-print">
-                  강화하면 공격력, 공격 속도, 사거리가 증가합니다.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="panel-intro">
-                  이곳을 지킬 건물을 선택하세요.
-                  <br />
-                  건설 즉시 자동으로 적을 공격합니다.
-                </p>
-                {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
+              ) : (
+                <span className="tiny-emblem">
+                  <Icon name="castle" size={28} />
+                </span>
+              )}
+            </div>
+            <div className="sidebar-scroll">
+              {selected === null ? (
+                <>
+                  <p className="panel-intro">
+                    적들이 오기 전에 준비하세요.
+                    <br />
+                    전장의 <b>금색 원</b>을 선택하면 건설할 수 있어요.
+                  </p>
+                  <div className="mini-map" aria-label="건설 부지 선택">
+                    {PADS.map((p, i) => (
+                      <button
+                        key={i}
+                        className={
+                          view.towers.some((t) => t.pad === i) ? "occupied" : ""
+                        }
+                        style={{
+                          left: `${50 + p.x * 3.7}%`,
+                          top: `${24 + (p.z + 6) * 4.8}%`,
+                        }}
+                        aria-label={`건설 부지 ${i + 1} 선택`}
+                        onClick={() => setSelected(i)}
+                      >
+                        {view.towers.find((t) => t.pad === i)
+                          ? TOWERS[view.towers.find((t) => t.pad === i)!.kind]
+                              .icon
+                          : "+"}
+                      </button>
+                    ))}
+                    <span className="map-path" />
+                    <span className="map-keep">
+                      <Icon name="castle" size={20} />
+                    </span>
+                    <span className="map-caption">8 BUILD SITES</span>
+                  </div>
+                  <div className="section-title">
+                    <span>방어 건물</span>
+                    <small>{view.towers.length} / 8 건설됨</small>
+                  </div>
+                  {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
+                    <div className="tower-preview" key={kind}>
+                      <span style={{ color: TOWERS[kind].color }}>
+                        {TOWERS[kind].icon}
+                      </span>
+                      <div>
+                        <b>{TOWERS[kind].name}</b>
+                        <small>{TOWERS[kind].subtitle}</small>
+                      </div>
+                      <em>
+                        {TOWERS[kind].cost}
+                        <Icon name="coin" size={12} />
+                      </em>
+                    </div>
+                  ))}
+                </>
+              ) : tower ? (
+                <>
+                  <div className={`tower-portrait ${tower.kind}`}>
+                    <span>{TOWERS[tower.kind].icon}</span>
+                    <small>LEVEL {tower.level}</small>
+                  </div>
+                  <h3 className="tower-name">{TOWERS[tower.kind].name}</h3>
+                  <p className="panel-intro centered">
+                    {TOWERS[tower.kind].subtitle}
+                    <br />이 부지의 든든한 수호자입니다.
+                  </p>
+                  <div className="tower-stats">
+                    <span>
+                      공격력
+                      <strong>
+                        {Math.round(
+                          TOWERS[tower.kind].damage *
+                            (1 + (tower.level - 1) * 0.7),
+                        )}
+                      </strong>
+                    </span>
+                    <span>
+                      사거리
+                      <strong>
+                        {(
+                          TOWERS[tower.kind].range +
+                          (tower.level - 1) * 0.3
+                        ).toFixed(1)}
+                      </strong>
+                    </span>
+                    <span>
+                      레벨<strong>{tower.level} / 5</strong>
+                    </span>
+                  </div>
                   <button
-                    key={kind}
-                    className={`build-card ${kind}`}
-                    disabled={!canAct || view.gold < TOWERS[kind].cost}
+                    className="primary full"
+                    disabled={
+                      !canAct ||
+                      tower.level >= 5 ||
+                      view.gold < towerUpgradeCost(tower)
+                    }
                     onClick={() =>
                       act(
-                        () => build(state.current, selected!, kind),
-                        `${TOWERS[kind].name} 건설 완료!`,
+                        () => upgradeTower(state.current, selected!),
+                        "방어탑을 강화했습니다!",
                       )
                     }
                   >
-                    <span className="build-icon">{TOWERS[kind].icon}</span>
-                    <span className="build-info">
-                      <strong>{TOWERS[kind].name}</strong>
-                      <small>{TOWERS[kind].subtitle}</small>
-                      <em>
-                        공격 {TOWERS[kind].damage} · 사거리 {TOWERS[kind].range}
-                      </em>
-                    </span>
-                    <span className="build-price">
-                      <Icon name="coin" size={14} />
-                      {TOWERS[kind].cost}
-                      <b>건설 +</b>
-                    </span>
+                    {tower.level >= 5 ? (
+                      "최대 레벨 달성"
+                    ) : (
+                      <>
+                        건물 강화 <span>{towerUpgradeCost(tower)} G ↑</span>
+                      </>
+                    )}
                   </button>
-                ))}
-                <div className="tip">
-                  <Icon name="bolt" size={17} />
-                  <p>
-                    대포탑 앞에 서리탑을 세우면
-                    <br />
-                    느려진 적들을 한 번에 공격할 수 있어요.
+                  <p className="fine-print">
+                    강화하면 공격력, 공격 속도, 사거리가 증가합니다.
                   </p>
+                </>
+              ) : (
+                <>
+                  <p className="panel-intro">
+                    이곳을 지킬 건물을 선택하세요.
+                    <br />
+                    건설 즉시 자동으로 적을 공격합니다.
+                  </p>
+                  {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
+                    <button
+                      key={kind}
+                      className={`build-card ${kind}`}
+                      disabled={!canAct || view.gold < TOWERS[kind].cost}
+                      onClick={() =>
+                        act(
+                          () => build(state.current, selected!, kind),
+                          `${TOWERS[kind].name} 건설 완료!`,
+                        )
+                      }
+                    >
+                      <span className="build-icon">{TOWERS[kind].icon}</span>
+                      <span className="build-info">
+                        <strong>{TOWERS[kind].name}</strong>
+                        <small>{TOWERS[kind].subtitle}</small>
+                        <em>
+                          공격 {TOWERS[kind].damage} · 사거리 {TOWERS[kind].range}
+                        </em>
+                      </span>
+                      <span className="build-price">
+                        <Icon name="coin" size={14} />
+                        {TOWERS[kind].cost}
+                        <b>건설 +</b>
+                      </span>
+                    </button>
+                  ))}
+                  <div className="tip">
+                    <Icon name="bolt" size={17} />
+                    <p>
+                      대포탑 앞에 서리탑을 세우면
+                      <br />
+                      느려진 적들을 한 번에 공격할 수 있어요.
+                    </p>
+                  </div>
+                </>
+              )}
+              <div className="repair-card">
+                <div>
+                  <Icon name="shield" />
+                  <span>
+                    <b>성문 수리</b>
+                    <small>내구도 35 회복</small>
+                  </span>
                 </div>
-              </>
-            )}
-            <div className="repair-card">
-              <div>
-                <Icon name="shield" />
+                <button
+                  disabled={!canAct || view.gold < 60 || view.hp >= 100}
+                  onClick={() =>
+                    act(() => repair(state.current), "성문 내구도 +35")
+                  }
+                >
+                  60 G +
+                </button>
+              </div>
+            </div>
+            <div className="sidebar-footer">
+              <span>
+                <i />{" "}
+                {saveError ? "저장 공간을 확인해주세요" : "브라우저에 자동 저장"}
+              </span>
+              <button onClick={() => setConfirmReset(true)} aria-label="새 게임">
+                <Icon name="reset" size={15} />
+              </button>
+            </div>
+          </aside>
+
+          <footer className="command-bar">
+            <div className="hero-card">
+              <div className="hero-avatar">
+                <Icon name="sword" size={30} />
+                <span>{view.heroLevel}</span>
+              </div>
+              <div className="hero-info">
+                <small>왕국의 수호자</small>
+                <b>푸른 망토의 기사</b>
                 <span>
-                  <b>성문 수리</b>
-                  <small>내구도 35 회복</small>
+                  공격 {18 + (view.heroLevel - 1) * 11} <i>·</i> 자동 공격
                 </span>
               </div>
               <button
-                disabled={!canAct || view.gold < 60 || view.hp >= 100}
+                className="hero-upgrade"
+                disabled={
+                  !canAct ||
+                  view.gold < heroUpgradeCost(view) ||
+                  view.heroLevel >= 10
+                }
                 onClick={() =>
-                  act(() => repair(state.current), "성문 내구도 +35")
+                  act(() => upgradeHero(state.current), "영웅을 강화했습니다!")
                 }
               >
-                60 G +
+                강화 ↑
+                <small>
+                  {view.heroLevel >= 10 ? "MAX" : `${heroUpgradeCost(view)} G`}
+                </small>
               </button>
             </div>
-          </div>
-          <div className="sidebar-footer">
-            <span>
-              <i />{" "}
-              {saveError ? "저장 공간을 확인해주세요" : "브라우저에 자동 저장"}
-            </span>
-            <button onClick={() => setConfirmReset(true)} aria-label="새 게임">
-              <Icon name="reset" size={15} />
-            </button>
-          </div>
-        </aside>
-      </section>
-
-      <footer className="command-bar">
-        <div className="hero-card">
-          <div className="hero-avatar">
-            <Icon name="sword" size={30} />
-            <span>{view.heroLevel}</span>
-          </div>
-          <div className="hero-info">
-            <small>왕국의 수호자</small>
-            <b>푸른 망토의 기사</b>
-            <span>
-              공격 {18 + (view.heroLevel - 1) * 11} <i>·</i> 자동 공격
-            </span>
-          </div>
-          <button
-            className="hero-upgrade"
-            disabled={
-              !canAct ||
-              view.gold < heroUpgradeCost(view) ||
-              view.heroLevel >= 10
-            }
-            onClick={() =>
-              act(() => upgradeHero(state.current), "영웅을 강화했습니다!")
-            }
-          >
-            강화 ↑
-            <small>
-              {view.heroLevel >= 10 ? "MAX" : `${heroUpgradeCost(view)} G`}
-            </small>
-          </button>
-        </div>
-        <div className="keyboard-tip">
-          <span>
-            <kbd>W</kbd>
-            <br />
-            <kbd>A</kbd>
-            <kbd>S</kbd>
-            <kbd>D</kbd>
-          </span>
-          <small>
-            이동
-            <br />
-            <b>사거리 내 자동 공격</b>
-          </small>
-        </div>
-        <button
-          className="skill-button"
-          disabled={
-            !canAct || view.phase !== "battle" || view.skillCooldown > 0
-          }
-          onClick={skill}
-        >
-          <span className="skill-symbol">
-            <Icon name="bolt" size={23} />
-          </span>
-          <span>
-            <b>
-              서리 폭풍 <kbd>Q</kbd>
-            </b>
-            <small>
-              {view.skillCooldown > 0
-                ? `${Math.ceil(view.skillCooldown)}초 후 사용 가능`
-                : "주변 적에게 범위 피해 + 감속"}
-            </small>
-          </span>
-        </button>
-        <div className="wave-action">
-          <div className="wave-progress">
-            <span>
-              {view.phase === "battle"
-                ? `남은 적 ${view.total - view.spawned + view.enemies.length}`
-                : `${view.wave === 0 ? "첫 번째" : view.wave + 1 + "번째"} 공세 준비`}
+            <div className="keyboard-tip">
+              <span>
+                <kbd>W</kbd>
+                <br />
+                <kbd>A</kbd>
+                <kbd>S</kbd>
+                <kbd>D</kbd>
+              </span>
               <small>
-                {view.phase === "battle"
-                  ? `${progress}% 격퇴`
-                  : view.wave % 5 === 4
-                    ? "다음 공세에 보스 등장"
-                    : "준비되면 출격하세요"}
+                이동
+                <br />
+                <b>사거리 내 자동 공격</b>
               </small>
+            </div>
+            <button
+              className="skill-button"
+              disabled={
+                !canAct || view.phase !== "battle" || view.skillCooldown > 0
+              }
+              onClick={skill}
+            >
+              <span className="skill-symbol">
+                <Icon name="bolt" size={23} />
+              </span>
+              <span>
+                <b>
+                  서리 폭풍 <kbd>Q</kbd>
+                </b>
+                <small>
+                  {view.skillCooldown > 0
+                    ? `${Math.ceil(view.skillCooldown)}초 후 사용 가능`
+                    : "주변 적에게 범위 피해 + 감속"}
+                </small>
+              </span>
+            </button>
+            <div className="wave-action">
+              <div className="wave-progress">
+                <span>
+                  {view.phase === "battle"
+                    ? `남은 적 ${view.total - view.spawned + view.enemies.length}`
+                    : `${view.wave === 0 ? "첫 번째" : view.wave + 1 + "번째"} 공세 준비`}
+                  <small>
+                    {view.phase === "battle"
+                      ? `${progress}% 격퇴`
+                      : view.wave % 5 === 4
+                        ? "다음 공세에 보스 등장"
+                        : "준비되면 출격하세요"}
+                  </small>
+                </span>
+                <i>
+                  <b style={{ width: `${progress}%` }} />
+                </i>
+              </div>
+              <button
+                className="primary next-wave"
+                disabled={!canAct || view.phase !== "ready"}
+                onClick={wave}
+              >
+                <Icon name={view.phase === "battle" ? "sword" : "play"} size={18} />
+                {view.phase === "battle" ? "전투 중" : "공세 시작"}
+                <kbd>SPACE</kbd>
+              </button>
+            </div>
+          </footer>
+          <div className="bottom-note">
+            <span>
+              EMBERHOLD <i>•</i> SOLO STRATEGY DEFENSE
             </span>
-            <i>
-              <b style={{ width: `${progress}%` }} />
-            </i>
+            <span>
+              금색 원: 건설 / 선택 <i>·</i> P: 일시정지 <i>·</i> 5공세마다 보스
+            </span>
+            <span>나만의 작은 왕국</span>
           </div>
-          <button
-            className="primary next-wave"
-            disabled={!canAct || view.phase !== "ready"}
-            onClick={wave}
-          >
-            <Icon name={view.phase === "battle" ? "sword" : "play"} size={18} />
-            {view.phase === "battle" ? "전투 중" : "공세 시작"}
-            <kbd>SPACE</kbd>
-          </button>
-        </div>
-      </footer>
-      <div className="bottom-note">
-        <span>
-          EMBERHOLD <i>•</i> SOLO STRATEGY DEFENSE
-        </span>
-        <span>
-          금색 원: 건설 / 선택 <i>·</i> P: 일시정지 <i>·</i> 5공세마다 보스
-        </span>
-        <span>나만의 작은 왕국</span>
-      </div>
+        </section>
+      </section>
       {toast && (
         <div className="toast" role="status">
           {toast}
