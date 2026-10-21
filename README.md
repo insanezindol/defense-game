@@ -32,6 +32,8 @@ npm run preview
 - 진행은 2초마다 브라우저 localStorage에 저장되며 건설/강화와 탭을 떠날 때도 저장합니다. 기기·브라우저 사이에서 공유되지 않습니다. 브라우저 데이터를 지우면 저장도 삭제됩니다.
 - 탭을 숨기면 자동으로 일시정지합니다. 새 게임은 확인 후 시작합니다.
 
+![gameplay.png](gameplay.png)
+
 ## Vercel
 
 GitHub **private** 저장소를 Vercel에 가져온 뒤 Framework: Vite, Build: `npm run build`, Output: `dist`로 설정합니다. `vercel.json`에 동일한 설정이 있습니다.
