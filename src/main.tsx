@@ -23,6 +23,7 @@ import {
   type TowerKind,
 } from "./game";
 import { World } from "./world";
+import { HOME, MAP_BOUNDS, ROAD_POINTS } from "./battlefield";
 import { MIN_ZOOM, MAX_ZOOM } from "./world-models";
 import "./style.css";
 
@@ -62,7 +63,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     ),
     sword: (
       <>
-        <path d="M5 20l4-4m-3-3l5 5M9 14L19 3l2 1-1 3-9 9M3 18l3 3" />
+        <path d="M5 5c-3 0-3 5-3 8v5a3 3 0 006 0V9c0-2-1-4-3-4zM16 3c-3 0-3 5-3 8v5a3 3 0 006 0V7c0-2-1-4-3-4zM2 12l6-2m5 0l6-2" />
       </>
     ),
     flag: (
@@ -72,7 +73,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     ),
     castle: (
       <>
-        <path d="M3 21V9h4v3h3V6H8V3h3v2h2V3h3v3h-2v6h3V9h4v12zM10 21v-5h4v5" />
+        <path d="M3 11l9-8 9 8M5 10v11h14V10M10 21v-7h4v7" />
       </>
     ),
     pause: (
@@ -91,7 +92,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M4 10h4l5-5v14l-5-5H4zM17 9l5 6m0-6l-5 6" />
       </>
     ),
-    bolt: <path d="M13 2L4 14h7l-1 8 10-13h-7z" />,
+    bolt: <path d="M12 2S4 11 4 15a8 8 0 0016 0c0-4-8-13-8-13zM8 15c0 3 2 4 4 4" />,
     arrow: (
       <>
         <path d="M5 19L19 5M9 5h10v10M3 15l6 6" />
@@ -196,19 +197,19 @@ function App() {
       save();
       tone();
       notify(success);
-    } else notify("골드 또는 사용 조건을 확인하세요.");
+    } else notify("용돈이 모자라거나 아직 때가 아니에요!");
   }
   function wave() {
     act(
       () => startWave(state.current),
-      `${state.current.wave + 1}번째 공세가 시작됩니다!`,
+      `딩동! ${state.current.wave + 1}번째 불청객이 왔어요!`,
     );
   }
   function skill() {
     if (useSkill(state.current)) {
       tone(220);
       setView({ ...state.current });
-      notify("서리 폭풍! 주변 적에게 피해와 감속");
+      notify("물벼락 대청소! 불청객도 뽀송하게!");
     }
   }
   function reset() {
@@ -216,12 +217,14 @@ function App() {
     choosingDifficultyRef.current = false;
     setView({ ...state.current });
     setSelected(null);
+    setManagementOpen(false);
+    world.current?.resetView();
     setPaused(false);
     setConfirmReset(false);
     setChoosingDifficulty(false);
     setHelp(false);
     save();
-    notify("새로운 왕국의 이야기가 시작됩니다.");
+    notify("슬리퍼 장착! 우리집 사수 시작!");
   }
   useEffect(() => {
     if (!host.current) return;
@@ -252,14 +255,15 @@ function App() {
           (keys.current.has("s") || keys.current.has("arrowdown") ? 1 : 0) -
           (keys.current.has("w") || keys.current.has("arrowup") ? 1 : 0) +
           joystick.current.z;
+        const movement = w.screenInput(x, z);
         for (let i = 0; i < speedRef.current; i++)
-          update(state.current, dt, { x, z });
+          update(state.current, dt, movement);
         if (state.current.kills > previousKills) {
           tone(680);
           previousKills = state.current.kills;
         }
         if (previousPhase === "battle" && state.current.phase === "ready") {
-          notify(`공세 격퇴! +${45 + state.current.wave * 5} 골드`);
+          notify(`불청객 퇴근! 용돈 +${45 + state.current.wave * 5}`);
           save();
         }
         previousPhase = state.current.phase;
@@ -355,32 +359,32 @@ function App() {
       <section className="game-layout">
         <section className="battlefield" aria-label="전장">
           <header className="topbar">
-            <a className="brand" href="/" aria-label="Emberhold 홈">
+            <a className="brand" href="/" aria-label="우리집을 지켜라! 홈">
               <span className="brand-mark">
                 <Icon name="castle" size={26} />
               </span>
               <span>
-                EMBERHOLD<small>작은 왕국의 수호자</small>
+                우리집을 지켜라!<small>오늘도 평화로운 우리 동네?</small>
               </span>
             </a>
             <div className="resources">
               <div className="resource gold">
                 <Icon name="coin" size={23} />
                 <span>
-                  <small>보유 골드</small>
+                  <small>용돈</small>
                   <strong>{view.gold.toLocaleString()}</strong>
                 </span>
               </div>
               <div className="resource health">
                 <Icon name="shield" size={23} />
                 <span>
-                  <small>성문 내구도</small>
+                  <small>우리집 멀쩡함</small>
                   <strong>
                     {Math.ceil(view.hp)}
                     <em> / {view.maxHp}</em>
                   </strong>
                   <span className="health-meter">
-                    <i style={{ width: `${view.hp}%` }} />
+                    <i style={{ width: `${(view.hp / view.maxHp) * 100}%` }} />
                   </span>
                 </span>
               </div>
@@ -417,15 +421,15 @@ function App() {
           </header>
           <div className="chapter">
             <span className="eyebrow">
-              <i /> THE GREENWARD
+              <i /> WELCOME TO OUR BLOCK
             </span>
-            <h1>초록빛 변경</h1>
-            <p>이 작은 왕국을, 끝까지 지켜주세요. · {DIFFICULTIES[view.difficulty].label}</p>
+            <h1>오늘도 집이 최고!</h1>
+            <p>현관 앞은 우리가 접수한다! · {DIFFICULTIES[view.difficulty].label}</p>
           </div>
           <div className="wave-badge">
             <Icon name="flag" />
             <span>
-              공세 <strong>{String(view.wave || 1).padStart(2, "0")}</strong>
+              딩동 <strong>{String(view.wave || 1).padStart(2, "0")}</strong>
               <small> / 20</small>
             </span>
             <span
@@ -440,6 +444,8 @@ function App() {
               onClick={() => world.current?.setZoom(1)}>{Math.round(zoom * 100)}%</button>
             <button aria-label="전장 확대" title="확대" disabled={zoom >= MAX_ZOOM}
               onClick={() => world.current?.setZoom(zoom * 1.2)}>+</button>
+            <button className="view-reset" aria-label="기본 시점으로 돌아가기" title="기본 시점"
+              onClick={() => world.current?.resetView()}><Icon name="reset" size={17} /></button>
           </div>
           {renderError && (
             <div className="render-error" role="alert">
@@ -447,21 +453,21 @@ function App() {
             </div>
           )}
           <div className="enemy-entry">
-            <span>↓ &nbsp; 적 진입 방향 &nbsp; ↓</span>
+            <span>↓ &nbsp; 불청객 오는 길 &nbsp; ↓</span>
           </div>
           {view.phase === "ready" && (
             <div className="field-hint">
               <span className="hint-dot" />
               {view.wave === 0
-                ? "금색 건설 부지를 눌러 첫 방어탑을 세워보세요."
-                : "잠깐의 평화. 방어선을 정비하고 다음 공세를 준비하세요."}
+                ? "반짝이는 빈자리에 살림살이 하나 놔볼까요?"
+                : "잠깐 조용하네? 살림살이 보충할 시간!"}
             </div>
           )}
           <div className="field-bottom">
             <span className="live-tag">
-              <i /> {view.phase === "battle" ? "전투 진행 중" : "방어 준비"}
+              <i /> {view.phase === "battle" ? "불청객 응대 중" : "동네 순찰 중"}
               <b>·</b>
-              {view.kills} 처치
+              {view.kills}명 귀가
             </span>
             <button
               className="speed-button"
@@ -490,7 +496,7 @@ function App() {
           </div>
           <button
             className="mobile-skill"
-            aria-label="서리 폭풍 사용"
+            aria-label="물벼락 대청소 사용"
             disabled={
               !canAct || view.phase !== "battle" || view.skillCooldown > 0
             }
@@ -500,13 +506,13 @@ function App() {
             <small>
               {view.skillCooldown > 0
                 ? `${Math.ceil(view.skillCooldown)}s`
-                : "Q · 폭풍"}
+                : "물벼락"}
             </small>
           </button>
 
           <button
             className="management-toggle"
-            aria-controls="kingdom-panel"
+            aria-controls="home-panel"
             aria-expanded={managementOpen || selected !== null}
             onClick={() => {
               if (managementOpen || selected !== null) {
@@ -518,17 +524,17 @@ function App() {
             <Icon name="castle" size={16} /> 건설·관리
           </button>
           <aside
-            id="kingdom-panel"
+            id="home-panel"
             className={`sidebar ${selected !== null ? "is-selected" : ""} ${managementOpen || selected !== null ? "is-open" : ""}`}
-            aria-label="왕국 관리"
+            aria-label="우리집 관리"
           >
             <div className="sidebar-header">
               <div>
-                <span className="eyebrow">KINGDOM DEFENSE</span>
+                <span className="eyebrow">HOME SWEET HOME</span>
                 <h2>
                   {selected === null
-                    ? "방어선 구축"
-                    : `건설 부지 ${String(selected + 1).padStart(2, "0")}`}
+                    ? "우리집 살림살이"
+                    : `빈자리 ${String(selected + 1).padStart(2, "0")}`}
                 </h2>
               </div>
               {selected !== null || managementOpen ? (
@@ -552,9 +558,9 @@ function App() {
               {selected === null ? (
                 <>
                   <p className="panel-intro">
-                    적들이 오기 전에 준비하세요.
+                    슬리퍼만으론 조금 바쁠 수 있어요.
                     <br />
-                    전장의 <b>금색 원</b>을 선택하면 건설할 수 있어요.
+                    동네의 <b>반짝이는 빈자리</b>를 골라주세요.
                   </p>
                   <div className="mini-map" aria-label="건설 부지 선택">
                     {PADS.map((p, i) => (
@@ -564,8 +570,8 @@ function App() {
                           view.towers.some((t) => t.pad === i) ? "occupied" : ""
                         }
                         style={{
-                          left: `${50 + p.x * 3.7}%`,
-                          top: `${24 + (p.z + 6) * 4.8}%`,
+                          left: `${((p.x - MAP_BOUNDS.minX) / (MAP_BOUNDS.maxX - MAP_BOUNDS.minX)) * 100}%`,
+                          top: `${((p.z - MAP_BOUNDS.minZ) / (MAP_BOUNDS.maxZ - MAP_BOUNDS.minZ)) * 100}%`,
                         }}
                         aria-label={`건설 부지 ${i + 1} 선택`}
                         onClick={() => setSelected(i)}
@@ -576,15 +582,20 @@ function App() {
                           : "+"}
                       </button>
                     ))}
-                    <span className="map-path" />
-                    <span className="map-keep">
+                    <svg className="map-road" viewBox={`${MAP_BOUNDS.minX} ${MAP_BOUNDS.minZ} ${MAP_BOUNDS.maxX - MAP_BOUNDS.minX} ${MAP_BOUNDS.maxZ - MAP_BOUNDS.minZ}`} preserveAspectRatio="none" aria-hidden="true">
+                      <polyline points={ROAD_POINTS.map((p) => `${p.x},${p.z}`).join(" ")} />
+                    </svg>
+                    <span className="map-keep" style={{
+                      left: `${((HOME.x - MAP_BOUNDS.minX) / (MAP_BOUNDS.maxX - MAP_BOUNDS.minX)) * 100}%`,
+                      top: `${((HOME.z - MAP_BOUNDS.minZ) / (MAP_BOUNDS.maxZ - MAP_BOUNDS.minZ)) * 100}%`,
+                    }}>
                       <Icon name="castle" size={20} />
                     </span>
-                    <span className="map-caption">8 BUILD SITES</span>
+                    <span className="map-caption">{PADS.length}곳에 살림살이 설치 가능</span>
                   </div>
                   <div className="section-title">
-                    <span>방어 건물</span>
-                    <small>{view.towers.length} / 8 건설됨</small>
+                    <span>든든한 살림살이</span>
+                    <small>{view.towers.length} / {PADS.length} 설치</small>
                   </div>
                   {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
                     <div className="tower-preview" key={kind}>
@@ -611,7 +622,7 @@ function App() {
                   <h3 className="tower-name">{TOWERS[tower.kind].name}</h3>
                   <p className="panel-intro centered">
                     {TOWERS[tower.kind].subtitle}
-                    <br />이 부지의 든든한 수호자입니다.
+                    <br />오늘도 현관 앞 근무 중!
                   </p>
                   <div className="tower-stats">
                     <span>
@@ -646,7 +657,7 @@ function App() {
                     onClick={() =>
                       act(
                         () => upgradeTower(state.current, selected!),
-                        "방어탑을 강화했습니다!",
+                        "살림살이 업그레이드! 이 맛에 용돈 벌지!",
                       )
                     }
                   >
@@ -654,7 +665,7 @@ function App() {
                       "최대 레벨 달성"
                     ) : (
                       <>
-                        건물 강화 <span>{towerUpgradeCost(tower)} G ↑</span>
+                        더 튼튼하게 <span>{towerUpgradeCost(tower)} 용돈 ↑</span>
                       </>
                     )}
                   </button>
@@ -665,9 +676,9 @@ function App() {
               ) : (
                 <>
                   <p className="panel-intro">
-                    이곳을 지킬 건물을 선택하세요.
+                    이 자리에 뭘 놓을까요?
                     <br />
-                    건설 즉시 자동으로 적을 공격합니다.
+                    놓기만 하면 알아서 불청객을 돌려보내요.
                   </p>
                   {(Object.keys(TOWERS) as TowerKind[]).map((kind) => (
                     <button
@@ -699,9 +710,9 @@ function App() {
                   <div className="tip">
                     <Icon name="bolt" size={17} />
                     <p>
-                      대포탑 앞에 서리탑을 세우면
+                      택배 상자 대포 앞에 선풍기를 놓으면
                       <br />
-                      느려진 적들을 한 번에 공격할 수 있어요.
+                      바람 맞는 불청객에게 택배가 팡!
                     </p>
                   </div>
                 </>
@@ -710,17 +721,17 @@ function App() {
                 <div>
                   <Icon name="shield" />
                   <span>
-                    <b>성문 수리</b>
-                    <small>내구도 35 회복</small>
+                    <b>우리집 땜질</b>
+                    <small>멀쩡함 35 회복</small>
                   </span>
                 </div>
                 <button
-                  disabled={!canAct || view.gold < 60 || view.hp >= 100}
+                  disabled={!canAct || view.gold < 60 || view.hp >= view.maxHp}
                   onClick={() =>
-                    act(() => repair(state.current), "성문 내구도 +35")
+                    act(() => repair(state.current), "우리집 멀쩡함 +35")
                   }
                 >
-                  60 G +
+                  60 용돈 +
                 </button>
               </div>
             </div>
@@ -742,8 +753,8 @@ function App() {
                 <span>{view.heroLevel}</span>
               </div>
               <div className="hero-info">
-                <small>왕국의 수호자</small>
-                <b>푸른 망토의 기사</b>
+                <small>동네 최강 슬리퍼</small>
+                <b>슬리퍼 집주인</b>
                 <span>
                   공격 {18 + (view.heroLevel - 1) * 11} <i>·</i> 자동 공격
                 </span>
@@ -756,12 +767,12 @@ function App() {
                   view.heroLevel >= 10
                 }
                 onClick={() =>
-                  act(() => upgradeHero(state.current), "영웅을 강화했습니다!")
+                  act(() => upgradeHero(state.current), "슬리퍼가 더 매워졌어요!")
                 }
               >
                 강화 ↑
                 <small>
-                  {view.heroLevel >= 10 ? "MAX" : `${heroUpgradeCost(view)} G`}
+                  {view.heroLevel >= 10 ? "MAX" : `${heroUpgradeCost(view)} 용돈`}
                 </small>
               </button>
             </div>
@@ -791,12 +802,12 @@ function App() {
               </span>
               <span>
                 <b>
-                  서리 폭풍 <kbd>Q</kbd>
+                  물벼락 대청소 <kbd>Q</kbd>
                 </b>
                 <small>
                   {view.skillCooldown > 0
                     ? `${Math.ceil(view.skillCooldown)}초 후 사용 가능`
-                    : "주변 적에게 범위 피해 + 감속"}
+                    : "주변 불청객에게 시원한 물 한 바가지"}
                 </small>
               </span>
             </button>
@@ -804,14 +815,14 @@ function App() {
               <div className="wave-progress">
                 <span>
                   {view.phase === "battle"
-                    ? `남은 적 ${view.total - view.spawned + view.enemies.length}`
-                    : `${view.wave === 0 ? "첫 번째" : view.wave + 1 + "번째"} 공세 준비`}
+                    ? `불청객 ${view.total - view.spawned + view.enemies.length}`
+                    : `${view.wave === 0 ? "첫 번째" : view.wave + 1 + "번째"} 방문 준비`}
                   <small>
                     {view.phase === "battle"
                       ? `${progress}% 격퇴`
                       : view.wave % 5 === 4
-                        ? "다음 공세에 보스 등장"
-                        : "준비되면 출격하세요"}
+                        ? "다음엔 덩치 큰 이웃 등장"
+                        : "용돈 쓰고 문 열어주세요"}
                   </small>
                 </span>
                 <i>
@@ -824,19 +835,19 @@ function App() {
                 onClick={wave}
               >
                 <Icon name={view.phase === "battle" ? "sword" : "play"} size={18} />
-                {view.phase === "battle" ? "전투 중" : "공세 시작"}
+                {view.phase === "battle" ? "응대 중!" : "또 온다!"}
                 <kbd>SPACE</kbd>
               </button>
             </div>
           </footer>
           <div className="bottom-note">
             <span>
-              EMBERHOLD <i>•</i> SOLO STRATEGY DEFENSE
+              우리집을 지켜라! <i>•</i> 슬리퍼로 지키는 평화
             </span>
             <span>
-              금색 원: 건설 / 선택 <i>·</i> P: 일시정지 <i>·</i> 5공세마다 보스
+              반짝이는 빈자리: 설치 / 선택 <i>·</i> P: 일시정지 <i>·</i> 5번마다 덩치 큰 이웃
             </span>
-            <span>나만의 작은 왕국</span>
+            <span>내 집이 제일 좋아</span>
           </div>
         </section>
       </section>
@@ -856,38 +867,42 @@ function App() {
             <span className="modal-seal">
               <Icon name="castle" size={38} />
             </span>
-            <span className="eyebrow">A LITTLE KINGDOM. A GREAT DEFENDER.</span>
+            <span className="eyebrow">집은 작아도 슬리퍼는 맵다!</span>
             <h2 id="welcome-title">
-              작은 왕국의
+              우리집을
               <br />
-              <em>커다란 모험.</em>
+              <em>지켜라!</em>
             </h2>
             <p>
-              푸른 망토를 걸치고, 밀려오는 적들로부터
+              슬리퍼 신고, 살림살이 총동원!
               <br />
-              당신만의 왕국을 지켜주세요.
+              시끌벅적한 불청객에게 현관 사수!
             </p>
             <div className="welcome-steps">
               <span>
                 <Icon name="sword" />
-                <b>적을 처치하고</b>
-                <small>자동 공격으로 골드 획득</small>
+                <b>불청객은 귀가!</b>
+                <small>자동 공격으로 용돈 벌기</small>
               </span>
               <span>
                 <Icon name="castle" />
-                <b>방어선을 세우고</b>
-                <small>금색 부지에 건설·강화</small>
+                <b>살림살이 출동!</b>
+                <small>반짝이는 빈자리에 설치</small>
               </span>
               <span>
                 <Icon name="flag" />
-                <b>20공세를 버티세요</b>
-                <small>5공세마다 강력한 보스</small>
+                <b>20번만 막아봐요</b>
+                <small>5번마다 큰 이웃이 딩동</small>
               </span>
             </div>
             <div className="control-note">
-              PC: WASD / 방향키 이동 · Q 스킬 · SPACE 공세 시작
+              PC: WASD / 방향키 이동 · Q 물벼락 · SPACE 또 온다!
               <br />
-              모바일: 왼쪽 조이스틱 이동 · 오른쪽 번개 스킬
+              마우스 왼쪽 드래그: 화면 이동 · 오른쪽 드래그: 회전
+              <br />
+              모바일: 조이스틱 이동 · 한 손가락 화면 이동
+              <br />
+              두 손가락 회전 · 오므리기/펴기 확대·축소
             </div>
             {choosingDifficulty && <DifficultyPicker value={difficulty} onChange={setDifficulty} />}
             <button
@@ -901,7 +916,7 @@ function App() {
                 save();
               }}
             >
-              {view.wave > 0 ? "왕국으로 돌아가기" : "왕국 지키기"}
+              {view.wave > 0 ? "집으로 돌아가기" : "슬리퍼 신고 출발!"}
               <Icon name="arrow" size={18} />
             </button>
             <small className="save-note">
@@ -921,9 +936,9 @@ function App() {
             <span className="modal-seal">
               <Icon name="pause" size={32} />
             </span>
-            <span className="eyebrow">TAKE A LITTLE BREATH</span>
+            <span className="eyebrow">물 한 잔 마시고 가요</span>
             <h2 id="pause-title">잠깐의 휴식</h2>
-            <p>왕국은 수호자님을 기다리고 있습니다.</p>
+            <p>슬리퍼도 잠깐 쉬어야죠.</p>
             <button className="primary full" onClick={() => setPaused(false)}>
               계속하기
               <Icon name="play" size={18} />
@@ -945,10 +960,10 @@ function App() {
             aria-modal="true"
             aria-labelledby="reset-title"
           >
-            <h2 id="reset-title">새로운 이야기</h2>
+            <h2 id="reset-title">다시 이사 온 기분!</h2>
             <p>
               현재 진행 상황을 지우고
-              <br />첫 공세부터 다시 시작할까요?
+              <br />첫 방문부터 다시 시작할까요?
             </p>
             <DifficultyPicker value={difficulty} onChange={setDifficulty} />
             <button className="primary full" onClick={reset}>
@@ -976,25 +991,25 @@ function App() {
             </span>
             <span className="eyebrow">
               {view.phase === "won"
-                ? "THE KINGDOM STANDS"
-                : "ANOTHER DAWN WILL COME"}
+                ? "HOME SWEET HOME!"
+                : "슬리퍼가 잠깐 미끄러졌네"}
             </span>
             <h2 id="end-title">
               {view.phase === "won"
-                ? "왕국을 지켜냈습니다!"
-                : "성문이 무너졌습니다"}
+                ? "우리집 사수 성공!"
+                : "앗, 집이 엉망진창!"}
             </h2>
             <p>
               {view.phase === "won"
-                ? "20번의 공세를 이겨낸 수호자의 이름은 오래 기억될 거예요."
-                : "다시 방어선을 세워 더 멀리 나아가세요."}
+                ? "20번의 딩동 끝! 오늘 저녁은 치킨이다!"
+                : "테이프 붙이고, 슬리퍼 고쳐 신고, 한 번 더!"}
             </p>
             <div className="end-stats">
               <span>
-                도달 공세<b>{view.wave} / 20</b>
+                받아낸 방문<b>{view.wave} / 20</b>
               </span>
               <span>
-                처치한 적<b>{view.kills}</b>
+                귀가시킨 불청객<b>{view.kills}</b>
               </span>
             </div>
             <button className="primary full" onClick={() => setConfirmReset(true)}>

@@ -1,4 +1,5 @@
-import { routeAroundTowers } from "./navigation";
+import { PADS, ROAD_LENGTH, roadPoint, nearestRoadDistance, MAP_BOUNDS, HOME } from "./battlefield";
+export { PADS } from "./battlefield";
 
 export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
@@ -12,8 +13,8 @@ export type Difficulty = keyof typeof DIFFICULTIES;
 export const DEFAULT_DIFFICULTY: Difficulty = "easy";
 export const TOWERS = {
   arrow: {
-    name: "궁수탑",
-    subtitle: "빠른 단일 공격",
+    name: "빨래집게 발사대",
+    subtitle: "집게 맛 좀 볼래?",
     cost: 70,
     damage: 15,
     range: 7.2,
@@ -22,8 +23,8 @@ export const TOWERS = {
     icon: "➶",
   },
   cannon: {
-    name: "대포탑",
-    subtitle: "강력한 범위 공격",
+    name: "택배 상자 대포",
+    subtitle: "반품 불가! 광역 배송",
     cost: 110,
     damage: 24,
     range: 6.7,
@@ -32,8 +33,8 @@ export const TOWERS = {
     icon: "◉",
   },
   frost: {
-    name: "서리탑",
-    subtitle: "이동 속도 55% 감소",
+    name: "초강력 선풍기",
+    subtitle: "맞바람에 느려져요",
     cost: 95,
     damage: 7,
     range: 7,
@@ -42,16 +43,6 @@ export const TOWERS = {
     icon: "❄",
   },
 } as const;
-export const PADS = [
-  { x: -5, z: -6 },
-  { x: 5, z: -6 },
-  { x: -5, z: -1 },
-  { x: 5, z: -1 },
-  { x: -5, z: 4 },
-  { x: 5, z: 4 },
-  { x: -10, z: -3 },
-  { x: 10, z: -3 },
-];
 export interface Tower {
   pad: number;
   kind: TowerKind;
@@ -68,6 +59,8 @@ export interface Enemy {
   kind: "grunt" | "runner" | "brute" | "boss";
   slow: number;
   reward: number;
+  progress?: number;
+  lane?: number;
 }
 export interface Shot {
   id: number;
@@ -79,7 +72,7 @@ export interface Shot {
   life: number;
 }
 export interface GameState {
-  version: 1;
+  version: 2;
   difficulty: Difficulty;
   phase: Phase;
   wave: number;
@@ -102,19 +95,17 @@ export interface GameState {
 export const SAVE_KEY = "emberhold-save-v1";
 const TOWER_RADIUS = 1.35;
 const CHARACTER_RADIUS = { hero: 0.8, grunt: 0.75, runner: 0.6, brute: 0.95, boss: 1.35 };
-// Routes are derived and recalculated after construction, so saves need no navigation state.
-const enemyRoutes = new WeakMap<Enemy, { layout: string; points: { x: number; z: number }[] }>();
 
 function separateFromTowers(position: { x: number; z: number }, towers: Tower[], radius: number, hero = false) {
   if (hero) {
-    position.x = Math.max(-12, Math.min(12, position.x));
-    position.z = Math.max(-10, Math.min(7.5, position.z));
+    position.x = Math.max(MAP_BOUNDS.minX + 2, Math.min(MAP_BOUNDS.maxX - 2, position.x));
+    position.z = Math.max(MAP_BOUNDS.minZ + 2, Math.min(HOME.z - 3.8, position.z));
   }
   const clearance = TOWER_RADIUS + radius;
   if (towers.every(t => Math.hypot(position.x - PADS[t.pad].x, position.z - PADS[t.pad].z) >= clearance - 1e-8)) return;
   let bestX = position.x, bestZ = position.z, bestDistance = Infinity;
   const offer = (x: number, z: number) => {
-    if (hero && (x < -12 || x > 12 || z < -10 || z > 7.5)) return;
+    if (hero && (x < MAP_BOUNDS.minX + 2 || x > MAP_BOUNDS.maxX - 2 || z < MAP_BOUNDS.minZ + 2 || z > HOME.z - 3.8)) return;
     if (towers.some(t => Math.hypot(x - PADS[t.pad].x, z - PADS[t.pad].z) < clearance - 1e-8)) return;
     const distance = (x - position.x) ** 2 + (z - position.z) ** 2;
     if (distance < bestDistance) { bestX = x; bestZ = z; bestDistance = distance; }
@@ -125,10 +116,15 @@ function separateFromTowers(position: { x: number; z: number }, towers: Tower[],
     offer(pad.x + (distance > 1e-8 ? dx / distance : pad.x < 0 ? 1 : -1) * clearance,
       pad.z + (distance > 1e-8 ? dz / distance : 0) * clearance);
     if (hero) {
-      for (const edge of [-12, 12]) {
+      for (const edge of [MAP_BOUNDS.minX + 2, MAP_BOUNDS.maxX - 2]) {
         if (Math.abs(edge - pad.x) > clearance) continue;
         const offset = Math.sqrt(Math.max(0, clearance ** 2 - (edge - pad.x) ** 2));
         offer(edge, pad.z + offset); offer(edge, pad.z - offset);
+      }
+      for (const edge of [MAP_BOUNDS.minZ + 2, HOME.z - 3.8]) {
+        if (Math.abs(edge - pad.z) > clearance) continue;
+        const offset = Math.sqrt(Math.max(0, clearance ** 2 - (edge - pad.z) ** 2));
+        offer(pad.x + offset, edge); offer(pad.x - offset, edge);
       }
     }
     // Circle intersections clear large units from two adjacent towers without pushing them back and forth.
@@ -146,9 +142,16 @@ function separateFromTowers(position: { x: number; z: number }, towers: Tower[],
   position.z = bestZ;
 }
 
+function placeEnemyOnRoad(enemy: Enemy) {
+  enemy.progress = Math.max(0, Math.min(ROAD_LENGTH, enemy.progress ?? nearestRoadDistance(enemy)));
+  enemy.lane = Math.max(-0.35, Math.min(0.35, enemy.lane ?? 0));
+  const point = roadPoint(enemy.progress, enemy.lane);
+  enemy.x = point.x; enemy.z = point.z;
+}
+
 function clearStructureOverlaps(s: GameState) {
   separateFromTowers(s.hero, s.towers, CHARACTER_RADIUS.hero, true);
-  for (const enemy of s.enemies) separateFromTowers(enemy, s.towers, CHARACTER_RADIUS[enemy.kind]);
+  for (const enemy of s.enemies) placeEnemyOnRoad(enemy);
 }
 
 function moveCharacter(s: GameState, position: { x: number; z: number }, dx: number, dz: number, radius: number) {
@@ -160,7 +163,7 @@ function moveCharacter(s: GameState, position: { x: number; z: number }, dx: num
 
 export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState {
   return {
-    version: 1,
+    version: 2,
     difficulty,
     phase: "ready",
     wave: 0,
@@ -168,7 +171,7 @@ export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState 
     hp: 100,
     maxHp: 100,
     heroLevel: 1,
-    hero: { x: 0, z: 2, cooldown: 0 },
+    hero: { x: HOME.x + 4, z: HOME.z - 5, cooldown: 0 },
     towers: [],
     enemies: [],
     shots: [],
@@ -325,8 +328,10 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
     const id = s.nextId++;
     s.enemies.push({
       id,
-      x: Math.sin(id * 73.13) * 8.5,
-      z: -12,
+      x: roadPoint(0).x,
+      z: roadPoint(0).z,
+      progress: 0,
+      lane: Math.sin(id * 73.13) * 0.35,
       hp,
       maxHp: hp,
       kind,
@@ -347,7 +352,7 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
   const target = (x: number, z: number, range: number) =>
     s.enemies
       .filter((e) => e.hp > 0 && Math.hypot(e.x - x, e.z - z) <= range)
-      .sort((a, b) => b.z - a.z)[0];
+      .sort((a, b) => (b.progress ?? nearestRoadDistance(b)) - (a.progress ?? nearestRoadDistance(a)))[0];
   s.hero.cooldown -= dt;
   const heroTarget = target(s.hero.x, s.hero.z, 7.8);
   if (s.hero.cooldown <= 0 && heroTarget) {
@@ -378,27 +383,13 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
       t.cooldown = stats.rate / (1 + (t.level - 1) * 0.13);
     }
   }
-  const layout = s.towers.map(t => t.pad).join(','), centers = s.towers.map(t => PADS[t.pad]);
   for (const e of s.enemies) {
     if (e.hp <= 0) continue;
     e.slow = Math.max(0, e.slow - dt);
     const speed = e.speed * (e.slow > 0 ? 0.45 : 1) * dt;
-    separateFromTowers(e, s.towers, CHARACTER_RADIUS[e.kind]);
-    let route = enemyRoutes.get(e);
-    if (!route || route.layout !== layout) {
-      route = { layout, points: routeAroundTowers(e, { x: 0, z: 10 }, centers, TOWER_RADIUS + CHARACTER_RADIUS[e.kind]) };
-      enemyRoutes.set(e, route);
-    }
-    while (route.points.length > 0 && Math.hypot(route.points[0].x - e.x, route.points[0].z - e.z) < 1e-6) route.points.shift();
-    const destination = route.points[0] ?? { x: 0, z: 10 };
-    const dx = destination.x - e.x,
-      dz = destination.z - e.z,
-      distance = Math.hypot(dx, dz);
-    if (distance > 0) {
-      const step = Math.min(speed, distance);
-      moveCharacter(s, e, (dx / distance) * step, (dz / distance) * step, CHARACTER_RADIUS[e.kind]);
-    }
-    if (e.z >= 8.2) {
+    e.progress = Math.min(ROAD_LENGTH, (e.progress ?? nearestRoadDistance(e)) + speed);
+    placeEnemyOnRoad(e);
+    if (e.progress! >= ROAD_LENGTH) {
       s.hp = Math.max(
         0,
         s.hp - (e.kind === "boss" ? 30 : e.kind === "brute" ? 10 : 5),
@@ -424,10 +415,11 @@ export function restore(raw: string | null): GameState | null {
   if (!raw) return null;
   try {
     const s = JSON.parse(raw) as GameState;
+    const legacy = (s.version as number) === 1;
     // Saves created before difficulty selection continue with the Easy preset.
     s.difficulty ??= DEFAULT_DIFFICULTY;
     if (
-      s.version !== 1 ||
+      (!legacy && s.version !== 2) ||
       !Object.hasOwn(DIFFICULTIES, s.difficulty) ||
       !["ready", "battle", "won", "lost"].includes(s.phase) ||
       !Number.isInteger(s.wave) ||
@@ -468,6 +460,7 @@ export function restore(raw: string | null): GameState | null {
     for (const t of s.towers) {
       if (
         !PADS[t.pad] ||
+        (legacy && t.pad >= 8) ||
         used.has(t.pad) ||
         !TOWERS[t.kind] ||
         !Number.isInteger(t.level) ||
@@ -486,6 +479,17 @@ export function restore(raw: string | null): GameState | null {
         !["grunt", "runner", "brute", "boss"].includes(e.kind)
       )
         return null;
+    if (s.enemies.some(e => (e.progress !== undefined && !Number.isFinite(e.progress)) || (e.lane !== undefined && !Number.isFinite(e.lane)))) return null;
+    if (legacy) {
+      s.version = 2;
+      s.towers.forEach(t => { t.pad *= 3; });
+      const oldHero = roadPoint(Math.max(0, Math.min(1, (s.hero.z + 12) / 20.2)) * ROAD_LENGTH);
+      s.hero.x = oldHero.x; s.hero.z = oldHero.z;
+      for (const e of s.enemies) {
+        e.progress = Math.max(0, Math.min(1, (e.z + 12) / 20.2)) * ROAD_LENGTH;
+        e.lane = Math.sign(e.x) * 0.25;
+      }
+    }
     s.shots = [];
     clearStructureOverlaps(s);
     return s;

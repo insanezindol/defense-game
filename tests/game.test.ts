@@ -17,127 +17,76 @@ import {
   useSkill,
   type Enemy,
 } from "../src/game";
+import { ROAD_LENGTH, ROAD_HALF_WIDTH, roadPoint, nearestRoadDistance, MAP_BOUNDS, HOME } from "../src/battlefield";
 
-test("empty build sites stay walkable; completed towers block and allow sliding", () => {
-  const s = newGame();
-  s.hero = { x: -8, z: -6, cooldown: 0 };
+test('empty sites are walkable and construction immediately separates the resident', () => {
+  const s = newGame(), pad = PADS[8];
+  s.hero = { x: pad.x - 3, z: pad.z, cooldown: 0 };
   for (let i = 0; i < 5; i++) update(s, 0.1, { x: 1, z: 0 });
-  assert.ok(Math.abs(s.hero.x + 5) < 0.01, 'empty foundation must be traversable');
-  assert.equal(build(s, 0, 'arrow'), true);
-  assert.ok(Math.hypot(s.hero.x + 5, s.hero.z + 6) >= 2 - 1e-8, 'construction separates an overlapping hero immediately');
-  s.hero.x = -8;
-  s.hero.z = -6;
-  for (let i = 0; i < 20; i++) {
-    update(s, 0.1, { x: 1, z: 0 });
-    assert.ok(Math.hypot(s.hero.x + 5, s.hero.z + 6) >= 2 - 1e-8);
-  }
-  assert.ok(s.hero.x <= -7 + 1e-8, 'cannot walk through the tower');
+  assert.ok(Math.hypot(s.hero.x - pad.x, s.hero.z - pad.z) < 0.01);
+  assert.equal(build(s, 8, 'arrow'), true);
+  assert.ok(Math.hypot(s.hero.x - pad.x, s.hero.z - pad.z) >= 2.15 - 1e-8);
+  s.hero.x = pad.x - 3; s.hero.z = pad.z;
+  for (let i = 0; i < 20; i++) update(s, 0.1, { x: 1, z: 0 });
+  assert.ok(s.hero.x <= pad.x - 2.15 + 1e-8);
   const before = s.hero.z;
   for (let i = 0; i < 10; i++) update(s, 0.1, { x: 1, z: 1 });
-  assert.ok(s.hero.z > before + 1, 'diagonal input slides along the structure');
+  assert.ok(s.hero.z > before + 1);
 });
 
-test("constructing around enemies and loading old saves clears tower overlaps", () => {
-  const s = newGame();
-  s.hero.x = -5; s.hero.z = -6;
-  s.enemies = [{ id: 10, x: -5, z: -6, hp: 1000, maxHp: 1000, speed: 1, kind: 'boss', slow: 0, reward: 9 }];
-  build(s, 0, 'cannon');
-  assert.ok(Math.hypot(s.enemies[0].x + 5, s.enemies[0].z + 6) >= 2.45 - 1e-8);
-  s.hero.x = -5; s.hero.z = -6;
-  s.enemies[0].x = -5; s.enemies[0].z = -6;
-  const loaded = restore(serialize(s))!;
-  assert.ok(Math.hypot(loaded.hero.x + 5, loaded.hero.z + 6) >= 2 - 1e-8);
-  assert.ok(Math.hypot(loaded.enemies[0].x + 5, loaded.enemies[0].z + 6) >= 2.45 - 1e-8);
-});
-
-test("all enemy sizes route around towers instead of clipping or getting stuck", () => {
-  for (const [kind, clearance] of [['grunt', 2.1], ['runner', 1.95], ['brute', 2.3], ['boss', 2.7]] as const) {
-    const s = newGame();
-    s.gold = 10000;
+test('every enemy size stays on the S road with all 24 structures and reaches only the final door', () => {
+  for (const kind of ['grunt', 'runner', 'brute', 'boss'] as const) {
+    const s = newGame(); s.gold = 10000;
     for (let pad = 0; pad < PADS.length; pad++) build(s, pad, 'arrow');
-    startWave(s);
-    s.spawned = s.total;
-    s.hero.cooldown = 1000;
-    s.towers.forEach(t => t.cooldown = 1000);
-    const enemy: Enemy = { id: 100, x: -5, z: -10, hp: 100000, maxHp: 100000, speed: 2, kind, slow: 0, reward: 9 };
+    startWave(s); s.spawned = s.total; s.hero.cooldown = 10000;
+    s.towers.forEach(t => t.cooldown = 10000);
+    const start = roadPoint(0);
+    const enemy: Enemy = { id: 100, x: start.x, z: start.z, progress: 0, lane: 0.35,
+      hp: 100000, maxHp: 100000, speed: 2, kind, slow: 0, reward: 9 };
     s.enemies = [enemy];
-    for (let i = 0; i < 500 && s.phase === 'battle'; i++) {
+    for (let i = 0; i < 6000 && s.phase === 'battle'; i++) {
       update(s, 0.1);
-      for (const pad of PADS) assert.ok(Math.hypot(enemy.x - pad.x, enemy.z - pad.z) >= clearance - 1e-8, `${kind} clips a tower`);
+      const center = roadPoint(nearestRoadDistance(enemy));
+      assert.ok(Math.hypot(enemy.x - center.x, enemy.z - center.z) <= 0.36);
+      for (const pad of PADS) assert.ok(Math.hypot(enemy.x - pad.x, enemy.z - pad.z) >= 2.7 - 1e-8);
+      if (enemy.progress! < ROAD_LENGTH) assert.equal(s.hp, 100);
     }
-    assert.equal(s.phase, 'ready', `${kind} must still reach the gate`);
-    assert.ok(s.hp < 100, `${kind} must breach rather than disappear`);
+    assert.equal(s.phase, 'ready');
+    assert.equal(s.hp, kind === 'boss' ? 70 : kind === 'brute' ? 90 : 95);
   }
 });
 
-test("collision keeps the hero in bounds beside outer towers and cannot tunnel on a long frame", () => {
-  const s = newGame();
-  s.gold = 10000;
+test('targeting follows road progress even when two enemies share a Z coordinate', () => {
+  const s = newGame(); startWave(s); s.spawned = s.total;
+  s.hero.x = -6; s.hero.z = -24;
+  s.enemies = [6, 10].map((progress, i) => ({ id: 100 + i, ...roadPoint(progress), progress,
+    hp: 1000, maxHp: 1000, speed: 1, kind: 'grunt' as const, slow: 0, reward: 9 }));
+  update(s, 0);
+  assert.equal(s.shots[0].tx, roadPoint(10).x);
+});
+
+test('legacy saves keep money, waves, tower levels and active enemies on the new map', () => {
+  const old = { ...newGame(), version: 1, gold: 321, wave: 7, phase: 'battle',
+    hero: { x: -5, z: 2, cooldown: 0 },
+    towers: [{ pad: 0, kind: 'arrow', level: 3, cooldown: 1 }, { pad: 7, kind: 'cannon', level: 2, cooldown: 0 }],
+    enemies: [{ id: 10, x: 5, z: 0, hp: 77, maxHp: 100, speed: 0.8, kind: 'boss', slow: 0, reward: 110 }] };
+  const s = restore(JSON.stringify(old))!;
+  assert.ok(s); assert.equal(s.version, 2); assert.equal(s.gold, 321); assert.equal(s.wave, 7);
+  assert.deepEqual(s.towers.map(t => [t.pad, t.level]), [[0, 3], [21, 2]]);
+  assert.equal(s.enemies[0].hp, 77);
+  const center = roadPoint(nearestRoadDistance(s.enemies[0]));
+  assert.ok(Math.hypot(s.enemies[0].x - center.x, s.enemies[0].z - center.z) < ROAD_HALF_WIDTH);
+  assert.deepEqual(restore(serialize(s)), s);
+});
+
+test('movement and new structures keep the resident within the larger neighborhood', () => {
+  const s = newGame(); s.gold = 10000;
   for (let pad = 0; pad < PADS.length; pad++) build(s, pad, 'cannon');
-  for (const x of [-12, 12]) {
-    s.hero.x = x; s.hero.z = -3;
-    for (let i = 0; i < 200; i++) {
-      update(s, i === 0 ? 10 : 0.1, { x: Math.sin(i * 0.23), z: Math.cos(i * 0.17) });
-      assert.ok(s.hero.x >= -12 && s.hero.x <= 12);
-      assert.ok(s.hero.z >= -10 && s.hero.z <= 7.5);
-      for (const pad of PADS) assert.ok(Math.hypot(s.hero.x - pad.x, s.hero.z - pad.z) >= 2.15 - 1e-8);
-    }
-  }
-});
-
-test("a boss between adjacent towers is separated immediately when a second tower is built", () => {
-  const s = newGame();
-  s.gold = 1000;
-  build(s, 0, 'arrow');
-  s.enemies = [{ id: 10, x: -5, z: -3.5, hp: 1000, maxHp: 1000, speed: 1, kind: 'boss', slow: 0, reward: 9 }];
-  build(s, 2, 'arrow');
-  for (const tower of s.towers) {
-    const pad = PADS[tower.pad];
-    assert.ok(Math.hypot(s.enemies[0].x - pad.x, s.enemies[0].z - pad.z) >= 2.7 - 1e-8);
-  }
-});
-
-test("bosses pass the outside joints of a continuous column of towers", () => {
-  for (const side of [-1, 1]) {
-    const s = newGame();
-    s.gold = 10000;
-    for (const pad of side < 0 ? [0, 2, 4] : [1, 3, 5]) build(s, pad, 'arrow');
-    startWave(s);
-    s.spawned = s.total;
-    s.hero.cooldown = 1000;
-    s.towers.forEach(t => t.cooldown = 1000);
-    const boss: Enemy = { id: 10, x: side * 8.5, z: -12, hp: 100000, maxHp: 100000, speed: 0.8, kind: 'boss', slow: 0, reward: 9 };
-    s.enemies = [boss];
-    for (let i = 0; i < 1500 && s.phase === 'battle'; i++) {
-      update(s, 0.1);
-      for (const tower of s.towers) {
-        const pad = PADS[tower.pad];
-        assert.ok(Math.hypot(boss.x - pad.x, boss.z - pad.z) >= 2.7 - 1e-8);
-      }
-    }
-    assert.equal(s.phase, 'ready', 'boss must not be trapped in a clearance-circle joint');
-    assert.equal(s.hp, 70);
-  }
-});
-
-test("bosses escape narrow diagonal tower junctions, including an old overlapping save", () => {
-  for (const side of [-1, 1]) for (const atJoint of [false, true]) {
-    const s = newGame();
-    s.gold = 1000;
-    for (const pad of side < 0 ? [2, 6] : [3, 7]) build(s, pad, 'arrow');
-    startWave(s); s.spawned = s.total; s.hero.cooldown = 1000;
-    s.towers.forEach(t => t.cooldown = 1000);
-    const boss: Enemy = { id: 100, x: side * (atJoint ? 7.42572186472918 : 8.5), z: atJoint ? -2.18569533817705 : -12,
-      hp: 100000, maxHp: 100000, speed: 0.8, kind: 'boss', slow: 0, reward: 9 };
-    s.enemies = [boss];
-    for (let i = 0; i < 1500 && s.phase === 'battle'; i++) {
-      update(s, 0.1);
-      for (const tower of s.towers) {
-        const pad = PADS[tower.pad];
-        assert.ok(Math.hypot(boss.x - pad.x, boss.z - pad.z) >= 2.7 - 1e-8);
-      }
-    }
-    assert.equal(s.phase, 'ready'); assert.equal(s.hp, 70);
+  for (let i = 0; i < 800; i++) {
+    update(s, i === 0 ? 10 : 0.1, { x: Math.sin(i * 0.23), z: Math.cos(i * 0.17) });
+    assert.ok(s.hero.x >= MAP_BOUNDS.minX + 2 && s.hero.x <= MAP_BOUNDS.maxX - 2);
+    assert.ok(s.hero.z >= MAP_BOUNDS.minZ + 2 && s.hero.z <= HOME.z - 3.8);
+    for (const pad of PADS) assert.ok(Math.hypot(s.hero.x - pad.x, s.hero.z - pad.z) >= 2.15 - 1e-8);
   }
 });
 
@@ -197,8 +146,8 @@ test("kills reward gold once; breaches damage the gate without rewarding a kill"
   s.enemies = [
     {
       id: 100,
-      x: 0,
-      z: 3,
+      x: s.hero.x,
+      z: s.hero.z,
       hp: 1,
       maxHp: 1,
       speed: 1,
@@ -218,7 +167,8 @@ test("kills reward gold once; breaches damage the gate without rewarding a kill"
     {
       id: 101,
       x: 0,
-      z: 8.3,
+      z: 26,
+      progress: ROAD_LENGTH - 0.01,
       hp: 100,
       maxHp: 100,
       speed: 1,
@@ -266,13 +216,13 @@ test("saving preserves an active battle and rejects corrupted or incompatible sa
 });
 test("an undefended kingdom loses and a prepared kingdom can beat all 20 waves", () => {
   const lost = newGame();
-  lost.hero.x = 12;
-  lost.hero.z = 7;
+  lost.hero.x = 22;
+  lost.hero.z = -32;
   startWave(lost);
-  for (let i = 0; i < 2000 && lost.phase === "battle"; i++) update(lost, 0.1);
+  for (let i = 0; i < 6000 && lost.phase === "battle"; i++) update(lost, 0.1);
   if (lost.phase === "ready") {
     startWave(lost);
-    for (let i = 0; i < 2000 && String(lost.phase) === "battle"; i++)
+    for (let i = 0; i < 6000 && String(lost.phase) === "battle"; i++)
       update(lost, 0.1);
   }
   assert.equal(lost.phase, "lost");
@@ -290,7 +240,7 @@ test("an undefended kingdom loses and a prepared kingdom can beat all 20 waves",
   ] as const;
   for (let wave = 1; wave <= 20; wave++) {
     // This strategy uses only earned gold; construction and upgrades happen between waves.
-    for (let pad = 0; pad < 8; pad++) build(s, pad, plan[pad]);
+    for (let pad = 0; pad < PADS.length; pad++) build(s, pad, plan[pad % plan.length]);
     let changed = true;
     while (changed) {
       changed = false;
@@ -304,7 +254,7 @@ test("an undefended kingdom loses and a prepared kingdom can beat all 20 waves",
     if (s.gold >= heroUpgradeCost(s)) upgradeHero(s);
     if (s.hp < 80) repair(s);
     assert.equal(startWave(s), true, `could not start wave ${wave}`);
-    for (let i = 0; i < 3000 && s.phase === "battle"; i++) {
+    for (let i = 0; i < 6000 && s.phase === "battle"; i++) {
       if (
         s.skillCooldown === 0 &&
         s.enemies.some((e) => Math.hypot(e.x - s.hero.x, e.z - s.hero.z) < 6)
@@ -317,4 +267,15 @@ test("an undefended kingdom loses and a prepared kingdom can beat all 20 waves",
   }
   assert.equal(s.phase, "won");
   assert.equal(startWave(s), false);
+});
+
+
+test('front boundary construction and restore separate the resident from a tower', () => {
+  const s = newGame(); s.hero.x = PADS[0].x; s.hero.z = MAP_BOUNDS.minZ + 2;
+  assert.equal(build(s, 0, 'arrow'), true);
+  assert.ok(Math.hypot(s.hero.x - PADS[0].x, s.hero.z - PADS[0].z) >= 2.15 - 1e-8);
+  assert.ok(s.hero.z >= MAP_BOUNDS.minZ + 2);
+  s.hero.x = PADS[0].x; s.hero.z = MAP_BOUNDS.minZ + 2;
+  const loaded = restore(serialize(s))!;
+  assert.ok(Math.hypot(loaded.hero.x - PADS[0].x, loaded.hero.z - PADS[0].z) >= 2.15 - 1e-8);
 });
