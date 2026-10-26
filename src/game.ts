@@ -5,9 +5,9 @@ export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
 // Balance tuning: only enemy HP scales, keeping rewards and pacing unchanged.
 export const DIFFICULTIES = {
-  easy: { label: "Easy", enemyHpMultiplier: 2 },
-  normal: { label: "Normal", enemyHpMultiplier: 3 },
-  hard: { label: "Hard", enemyHpMultiplier: 4 },
+  easy: { label: "Easy", enemyHpMultiplier: 20 },
+  normal: { label: "Normal", enemyHpMultiplier: 30 },
+  hard: { label: "Hard", enemyHpMultiplier: 40 },
 } as const;
 export type Difficulty = keyof typeof DIFFICULTIES;
 export const DEFAULT_DIFFICULTY: Difficulty = "easy";
@@ -72,7 +72,7 @@ export interface Shot {
   life: number;
 }
 export interface GameState {
-  version: 2;
+  version: 3;
   difficulty: Difficulty;
   phase: Phase;
   wave: number;
@@ -163,7 +163,7 @@ function moveCharacter(s: GameState, position: { x: number; z: number }, dx: num
 
 export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState {
   return {
-    version: 2,
+    version: 3,
     difficulty,
     phase: "ready",
     wave: 0,
@@ -416,10 +416,11 @@ export function restore(raw: string | null): GameState | null {
   try {
     const s = JSON.parse(raw) as GameState;
     const legacy = (s.version as number) === 1;
+    const oldMap = (s.version as number) === 2;
     // Saves created before difficulty selection continue with the Easy preset.
     s.difficulty ??= DEFAULT_DIFFICULTY;
     if (
-      (!legacy && s.version !== 2) ||
+      (!legacy && !oldMap && s.version !== 3) ||
       !Object.hasOwn(DIFFICULTIES, s.difficulty) ||
       !["ready", "battle", "won", "lost"].includes(s.phase) ||
       !Number.isInteger(s.wave) ||
@@ -481,7 +482,6 @@ export function restore(raw: string | null): GameState | null {
         return null;
     if (s.enemies.some(e => (e.progress !== undefined && !Number.isFinite(e.progress)) || (e.lane !== undefined && !Number.isFinite(e.lane)))) return null;
     if (legacy) {
-      s.version = 2;
       s.towers.forEach(t => { t.pad *= 3; });
       const oldHero = roadPoint(Math.max(0, Math.min(1, (s.hero.z + 12) / 20.2)) * ROAD_LENGTH);
       s.hero.x = oldHero.x; s.hero.z = oldHero.z;
@@ -490,6 +490,15 @@ export function restore(raw: string | null): GameState | null {
         e.lane = Math.sign(e.x) * 0.25;
       }
     }
+    if (oldMap) {
+      s.hero.z = (s.hero.z + 2) * 0.625 - 2;
+      for (const e of s.enemies) {
+        // Reproject old coordinates instead of reusing distances from the longer road.
+        const centerZ = e.z + 2;
+        e.progress = nearestRoadDistance({ x: e.x, z: centerZ * 0.625 - 2 });
+      }
+    }
+    s.version = 3;
     s.shots = [];
     clearStructureOverlaps(s);
     return s;

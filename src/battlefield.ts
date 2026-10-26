@@ -1,21 +1,21 @@
 export type Point = { x: number; z: number };
 export const MAP_BOUNDS = { minX: -24, maxX: 24, minZ: -34, maxZ: 34 };
 export const ROAD_HALF_WIDTH = 2.15;
-export const ROAD_POINTS: Point[] = [{ x: -14, z: -26 }];
+export const ROAD_POINTS: Point[] = [{ x: -14, z: -17 }];
 function lineTo(x: number, z: number) {
   const from = ROAD_POINTS.at(-1)!, steps = Math.ceil(Math.hypot(x - from.x, z - from.z) / 0.4);
   for (let i = 1; i <= steps; i++) ROAD_POINTS.push({ x: from.x + (x - from.x) * i / steps, z: from.z + (z - from.z) * i / steps });
 }
-function bend(cx: number, cz: number, start: number, end: number, radius = 8) {
+function bend(cx: number, cz: number, start: number, end: number, radius = 5) {
   for (let i = 1; i <= 64; i++) {
     const angle = start + (end - start) * i / 64;
     ROAD_POINTS.push({ x: cx + Math.cos(angle) * radius, z: cz + Math.sin(angle) * radius });
   }
 }
-lineTo(12, -26); bend(12, -18, -Math.PI / 2, Math.PI / 2);
-lineTo(-12, -10); bend(-12, -2, -Math.PI / 2, -Math.PI * 1.5);
-lineTo(12, 6); bend(12, 14, -Math.PI / 2, Math.PI / 2);
-lineTo(-9, 22); bend(-9, 25, -Math.PI / 2, -Math.PI, 3); lineTo(-12, 26);
+lineTo(12, -17); bend(12, -12, -Math.PI / 2, Math.PI / 2);
+lineTo(-12, -7); bend(-12, -2, -Math.PI / 2, -Math.PI * 1.5);
+lineTo(12, 3); bend(12, 8, -Math.PI / 2, Math.PI / 2);
+lineTo(-9, 13); bend(-9, 16, -Math.PI / 2, -Math.PI, 3); lineTo(-12, 17);
 const distances = [0];
 for (let i = 1; i < ROAD_POINTS.length; i++) {
   distances.push(distances[i - 1] + Math.hypot(ROAD_POINTS[i].x - ROAD_POINTS[i - 1].x, ROAD_POINTS[i].z - ROAD_POINTS[i - 1].z));
@@ -44,6 +44,6 @@ export function nearestRoadDistance(point: Point) {
   return result;
 }
 
-export const PADS: Point[] = [-30.5, -15, 1, 17].flatMap(z =>
+export const PADS: Point[] = [-21.5, -12, -2, 8].flatMap(z =>
   [-12, -7.2, -2.4, 2.4, 7.2, 12].map(x => ({ x, z })));
-export const HOME = { x: -12, z: 30 };
+export const HOME = { x: -12, z: 21 };

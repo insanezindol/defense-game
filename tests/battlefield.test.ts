@@ -26,3 +26,14 @@ test('road interpolation and nearest distance preserve progress through every be
   assert.deepEqual(roadPoint(-10), roadPoint(0));
   assert.deepEqual(roadPoint(ROAD_LENGTH + 10), roadPoint(ROAD_LENGTH));
 });
+
+test('interior pads are centered between straight road sections ten units apart', () => {
+  for (const pad of PADS.slice(6).filter(p => Math.abs(p.x) < 9)) {
+    const upper = roadPoint(nearestRoadDistance({ x: pad.x, z: pad.z - 5 }));
+    const lower = roadPoint(nearestRoadDistance({ x: pad.x, z: pad.z + 5 }));
+    assert.ok(Math.abs(upper.x - pad.x) < 1e-8);
+    assert.ok(Math.abs(lower.x - pad.x) < 1e-8);
+    assert.ok(Math.abs(upper.z - (pad.z - 5)) < 1e-8);
+    assert.ok(Math.abs(lower.z - (pad.z + 5)) < 1e-8);
+  }
+});
