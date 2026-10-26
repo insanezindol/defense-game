@@ -5,9 +5,9 @@ export type TowerKind = "arrow" | "cannon" | "frost";
 export type Phase = "ready" | "battle" | "won" | "lost";
 // Balance tuning: only enemy HP scales, keeping rewards and pacing unchanged.
 export const DIFFICULTIES = {
-  easy: { label: "Easy", enemyHpMultiplier: 20 },
-  normal: { label: "Normal", enemyHpMultiplier: 30 },
-  hard: { label: "Hard", enemyHpMultiplier: 40 },
+  easy: { label: "Easy", enemyHpMultiplier: 5 },
+  normal: { label: "Normal", enemyHpMultiplier: 10 },
+  hard: { label: "Hard", enemyHpMultiplier: 20 },
 } as const;
 export type Difficulty = keyof typeof DIFFICULTIES;
 export const DEFAULT_DIFFICULTY: Difficulty = "easy";

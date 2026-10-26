@@ -146,7 +146,7 @@ test("difficulty scales every enemy kind including bosses without extra rewards"
       kinds.add(enemy.kind);
       const baseHp = (24 + scaled.wave * 7) *
         ({ grunt: 1, runner: 0.7, brute: 2.5, boss: 13 }[enemy.kind]);
-      assert.equal(enemy.maxHp, baseHp * { easy: 20, normal: 30, hard: 40 }[difficulty]);
+      assert.equal(enemy.maxHp, baseHp * { easy: 5, normal: 10, hard: 20 }[difficulty]);
       assert.equal(enemy.hp, enemy.maxHp);
       assert.equal(enemy.speed, original.speed);
       assert.equal(enemy.reward, original.reward);
@@ -253,7 +253,7 @@ test("saving preserves an active battle and rejects corrupted or incompatible sa
     null,
   );
 });
-test("an undefended kingdom and the former passive strategy lose at the increased difficulty", () => {
+test("an undefended kingdom loses and a prepared kingdom can beat all 20 Easy waves", () => {
   const lost = newGame();
   lost.hero.x = 22;
   lost.hero.z = -32;
@@ -301,10 +301,10 @@ test("an undefended kingdom and the former passive strategy lose at the increase
         useSkill(s);
       update(s, 0.1);
     }
-    if (s.phase === 'lost') break;
+    assert.notEqual(s.phase, 'lost', `kingdom fell on wave ${wave}`);
     assert.notEqual(s.phase, "battle", `wave ${wave} did not complete`);
   }
-  assert.equal(s.phase, "lost");
+  assert.equal(s.phase, "won");
   assert.equal(startWave(s), false);
 });
 
