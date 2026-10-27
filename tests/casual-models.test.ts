@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import * as THREE from "three";
 import { createCharacter, animateCharacter, createDefense } from "../src/world-models";
 
+test('residential characters have faceted faces and separately rigged tailored clothing', () => {
+  for (const kind of ['hero', 'grunt'] as const) {
+    const model = createCharacter(kind);
+    for (const name of ['head', 'collar', 'belt', 'hair', 'shoe-left', 'shoe-right']) {
+      assert.ok(model.getObjectByName(name), `${kind}: ${name}`);
+    }
+    const head = model.getObjectByName('head')!;
+    assert.ok(head instanceof THREE.Bone);
+  }
+});
+
 test("household cast has distinct props and keeps animated health/limb contracts", () => {
   const props = { hero: "broom", grunt: "sack", spam: "spam-phone", runner: "proboscis", brute: "speaker", boss: "monday-calendar" } as const;
   for (const [kind, prop] of Object.entries(props)) {

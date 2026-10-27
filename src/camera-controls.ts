@@ -7,8 +7,8 @@ type Pointer = { x: number; y: number; startX: number; startY: number; button: n
 
 export class CameraControls {
   readonly target = new THREE.Vector3();
-  yaw = DEFAULT_YAW;
-  pitch = DEFAULT_PITCH;
+  readonly yaw = DEFAULT_YAW;
+  readonly pitch = DEFAULT_PITCH;
   private distance = 100;
   private pointers = new Map<number, Pointer>();
   private gesturing = false;
@@ -62,8 +62,6 @@ export class CameraControls {
 
   reset() {
     this.target.set(0, 0, 0);
-    this.yaw = DEFAULT_YAW;
-    this.pitch = DEFAULT_PITCH;
     this.camera.zoom = 1;
     this.camera.updateProjectionMatrix();
     this.apply();
@@ -99,25 +97,19 @@ export class CameraControls {
     this.apply();
   }
 
-  rotate(deltaX: number, deltaY: number) {
-    this.yaw -= deltaX * 0.006;
-    this.pitch = THREE.MathUtils.clamp(this.pitch + deltaY * 0.006, Math.PI / 6, Math.PI * 5 / 12);
-    this.apply();
-  }
-
   screenInput(x: number, z: number) {
     return new THREE.Vector2(x * Math.cos(this.yaw) + z * Math.sin(this.yaw),
       z * Math.cos(this.yaw) - x * Math.sin(this.yaw));
   }
 
   private pointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 && event.button !== 2) return;
+    if (event.button !== 0) return;
     event.preventDefault();
     if (!this.pointers.size) this.gesturing = false;
     this.pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, button: event.button,
     });
-    if (this.pointers.size > 1 || event.button === 2) this.gesturing = true;
+    if (this.pointers.size > 1) this.gesturing = true;
     this.element.setPointerCapture(event.pointerId);
   };
 
@@ -136,11 +128,10 @@ export class CameraControls {
     if (!this.gesturing) return;
     if (points.length >= 2) {
       const nextX = (points[0].x + points[1].x) / 2, nextY = (points[0].y + points[1].y) / 2;
-      this.rotate(nextX - centerX, nextY - centerY);
+      this.pan(centerX, centerY, nextX, nextY);
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       if (beforeDistance > 0 && distance > 0) this.setZoom(this.camera.zoom * distance / beforeDistance, nextX, nextY);
-    } else if (pointer.button === 2) this.rotate(pointer.x - oldX, pointer.y - oldY);
-    else this.pan(oldX, oldY, pointer.x, pointer.y);
+    } else this.pan(oldX, oldY, pointer.x, pointer.y);
   };
 
   private release(event: PointerEvent) {

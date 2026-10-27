@@ -898,11 +898,11 @@ function App() {
             <div className="control-note">
               PC: WASD / 방향키 이동 · Q 물벼락 · SPACE 또 온다!
               <br />
-              마우스 왼쪽 드래그: 화면 이동 · 오른쪽 드래그: 회전
+              마우스 드래그: 화면 이동 · 휠: 확대·축소
               <br />
               모바일: 조이스틱 이동 · 한 손가락 화면 이동
               <br />
-              두 손가락 회전 · 오므리기/펴기 확대·축소
+              두 손가락 화면 이동 · 오므리기/펴기 확대·축소
             </div>
             {choosingDifficulty && <DifficultyPicker value={difficulty} onChange={setDifficulty} />}
             <button

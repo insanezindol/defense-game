@@ -40,7 +40,7 @@ export function projectilePosition(start: THREE.Vector3, end: THREE.Vector3, pro
 
 function toyParts(materials: Map<string, THREE.MeshStandardMaterial>) {
   function part(parent: THREE.Object3D, geometry: THREE.BufferGeometry, color: string, x: number, y: number, z: number) {
-    if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.72 }));
+    if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.88, flatShading: true }));
     const mesh = new THREE.Mesh(geometry, materials.get(color));
     mesh.position.set(x, y, z);
     mesh.castShadow = mesh.receiveShadow = true;
@@ -70,24 +70,32 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
   const body = namedGroup(root, "body");
   const enemy = kind !== "hero", boss = kind === "boss", brute = kind === "brute";
   const pink = "#ff638e", yellow = "#ffe06a", teal = "#46d6c4", navy = "#27344f";
-  const skin = "#ffcc9d";
+  const skin = "#dba77e";
+  const human = kind === "hero" || kind === "grunt";
   const cape = namedGroup(body, "cape", 0, 1.1, -0.22);
   const arms: THREE.Group[] = [];
   for (const side of [-1, 1]) {
     const name = side < 0 ? "left" : "right";
-    const leg = namedGroup(body, `leg-${name}`, side * (brute || boss ? 0.32 : 0.19), 0.66, 0);
+    const leg = namedGroup(body, `leg-${name}`, side * (brute || boss ? 0.32 : 0.19), human ? 0.9 : 0.66, 0);
     if (kind === "runner") {
       const foot = box(leg, navy, side * 0.17, -0.12, 0, 0.045, 0.6, 0.045);
       foot.rotation.z = side * 0.65;
     } else {
-      box(leg, kind === "hero" ? "#aaa9c6" : navy, 0, -0.2, 0, 0.24, 0.47, 0.25);
-      const slipper = sphere(leg, kind === "hero" ? pink : teal, 0, -0.49, 0.1, 0.19);
-      slipper.scale.set(1, 0.55, 1.55);
+      box(leg, kind === "hero" ? "#aaa9c6" : navy, 0, human ? -0.3 : -0.2, 0, 0.24, human ? 0.73 : 0.47, 0.25);
+      const shoe = namedGroup(leg, `shoe-${name}`);
+      if (human) {
+        box(shoe, kind === 'hero' ? '#b96458' : '#334852', 0, -0.76, 0.08, 0.28, 0.16, 0.47);
+        box(shoe, '#eee3ca', 0, -0.84, 0.08, 0.29, 0.045, 0.48);
+        box(shoe, kind === 'hero' ? '#e5b782' : navy, 0, -0.66, 0, 0.19, 0.09, 0.25);
+      } else {
+        const slipper = sphere(shoe, teal, 0, -0.49, 0.1, 0.19);
+        slipper.scale.set(1, 0.55, 1.55);
+      }
     }
-    const arm = namedGroup(body, `arm-${name}`, side * (brute || boss ? 0.64 : 0.4), 1.35, 0);
+    const arm = namedGroup(body, `arm-${name}`, side * (brute || boss ? 0.64 : 0.4), human ? 1.62 : 1.35, 0);
     arms.push(arm);
     if (kind !== "runner") {
-      const sleeve = sphere(arm, kind === "hero" ? teal : kind === "grunt" ? navy : pink, 0, -0.09, 0, 0.18);
+      const sleeve = part(arm, new THREE.CylinderGeometry(0.16, 0.15, 0.3, 6), kind === "hero" ? teal : kind === "grunt" ? navy : pink, 0, -0.09, 0);
       sleeve.scale.y = 1.2;
       box(arm, skin, 0, -0.32, 0, 0.16, 0.34, 0.17);
       sphere(arm, skin, 0, -0.49, 0.04, 0.13);
@@ -103,20 +111,33 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
     }
   }
   if (kind === "hero" || kind === "grunt") {
-    const shirt = part(body, new THREE.CylinderGeometry(0.32, 0.37, 0.66, 12), kind === "hero" ? teal : navy, 0, 1.1, 0);
-    shirt.scale.z = 0.8;
+    const shirt = part(body, new THREE.CylinderGeometry(0.43, 0.36, 0.8, 4), kind === "hero" ? '#398b83' : navy, 0, 1.4, 0);
+    shirt.rotation.y = Math.PI / 4; shirt.scale.z = 0.8;
+    const collar = namedGroup(body, 'collar');
+    for (const side of [-1, 1]) box(collar, '#eee3ca', side * 0.1, 1.77, 0.19, 0.16, 0.15, 0.07).rotation.z = side * -0.45;
+    const belt = namedGroup(body, 'belt');
+    box(belt, '#65483e', 0, 1.02, 0, 0.54, 0.1, 0.4);
+    box(belt, yellow, 0.08, 1.02, 0.215, 0.1, 0.09, 0.035);
     if (kind === "grunt") {
-      for (const y of [0.9, 1.05, 1.2]) box(body, "#faf1df", 0, y, 0.277, 0.59, 0.07, 0.035);
+      for (const y of [1.2, 1.37, 1.54]) box(body, "#faf1df", 0, y, 0.25, 0.54, 0.06, 0.035);
     } else {
-      const patch = sphere(body, yellow, 0, 1.17, 0.265, 0.13);
-      patch.scale.z = 0.2;
+      box(body, '#eee3ca', -0.15, 1.46, 0.25, 0.14, 0.15, 0.03);
+      for (const y of [1.2, 1.4, 1.6]) sphere(body, '#e9b863', 0.03, y, 0.28, 0.025);
     }
-    sphere(body, skin, 0, 1.77, 0.015, 0.34);
-    eyes(body, 1.79, 0.28, 0.13, 0.115);
-    sphere(body, skin, 0, 1.68, 0.36, 0.08);
-    box(body, navy, 0.045, 1.57, 0.302, 0.14, 0.035, 0.04).rotation.z = -0.16;
-    const hair = sphere(body, kind === "hero" ? "#65483e" : pink, 0, 2.0, -0.045, 0.29);
-    hair.scale.set(1.08, 0.48, 1);
+    part(body, new THREE.CylinderGeometry(0.1, 0.12, 0.2, 8), skin, 0, 1.88, 0);
+    const head = namedGroup(body, 'head', 0, 2.13, 0);
+    part(head, new THREE.CylinderGeometry(0.27, 0.23, 0.48, 8), skin, 0, 0, 0);
+    for (const side of [-1, 1]) {
+      sphere(head, skin, side * 0.27, 0, 0, 0.07);
+      box(head, navy, side * 0.1, 0.06, 0.252, 0.045, 0.065, 0.02);
+      box(head, '#65483e', side * 0.1, 0.15, 0.24, 0.085, 0.025, 0.03).rotation.z = side * -0.12;
+    }
+    part(head, new THREE.ConeGeometry(0.065, 0.13, 4), skin, 0, -0.025, 0.29).rotation.x = Math.PI / 2;
+    box(head, '#93674e', 0.015, -0.14, 0.232, 0.09, 0.018, 0.025);
+    const hair = namedGroup(head, 'hair');
+    part(hair, new THREE.CylinderGeometry(0.24, 0.29, 0.18, 7), kind === 'hero' ? '#65483e' : navy, 0, 0.23, -0.02);
+    box(hair, kind === 'hero' ? '#65483e' : navy, -0.13, 0.16, 0.19, 0.25, 0.15, 0.16).rotation.z = -0.18;
+    box(hair, kind === 'hero' ? '#65483e' : navy, 0, 0.06, -0.23, 0.43, 0.3, 0.1);
     if (kind === "hero") {
       const broom = namedGroup(arms[1], "broom", 0, -0.49, 0.12);
       box(broom, "#b98554", 0, 0.21, 0.22, 0.075, 1.45, 0.075).rotation.x = -0.22;
@@ -125,9 +146,12 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
       box(broom, pink, 0, -0.38, 0.34, 0.48, 0.1, 0.2);
       for (const x of [-0.15, -0.05, 0.05, 0.15]) box(broom, "#d99f36", x, -0.58, 0.48, 0.018, 0.21, 0.025);
     } else {
-      const mask = namedGroup(body, "burglar-mask");
-      box(mask, navy, 0, 1.79, 0.273, 0.58, 0.19, 0.08);
-      eyes(mask, 1.8, 0.33, 0.13, 0.10);
+      const mask = namedGroup(head, "burglar-mask");
+      box(mask, navy, 0, 0.04, 0.25, 0.45, 0.13, 0.04);
+      for (const side of [-1, 1]) {
+        box(mask, '#faf1df', side * 0.1, 0.05, 0.277, 0.1, 0.06, 0.02);
+        box(mask, navy, side * 0.1, 0.05, 0.291, 0.035, 0.045, 0.01);
+      }
       const sack = namedGroup(cape, "sack", -0.11, 0.03, -0.15);
       const bag = sphere(sack, yellow, 0, 0, -0.15, 0.54);
       bag.scale.set(1, 1.16, 0.9);
@@ -219,7 +243,7 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
     }
     sphere(calendar, pink, 0, 2.13, 0, 0.08);
   }
-  const health = namedGroup(root, "health", 0, 2.46, 0);
+  const health = namedGroup(root, "health", 0, human ? 2.75 : 2.46, 0);
   box(health, navy, 0, 0, 0, 0.95, 0.085, 0.025);
   box(health, enemy ? pink : teal, 0, 0, 0.02, 0.88, 0.045, 0.025).name = "hp";
   // Bake toy pieces into shared skinned surfaces; limbs remain real bones.
@@ -265,7 +289,7 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
     const key = `skin-${surface}`;
     if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({
       color: '#ffffff', vertexColors: true, metalness: surface === 'metal' ? 0.72 : 0.05,
-      roughness: surface === 'metal' ? 0.32 : 0.85,
+      roughness: surface === 'metal' ? 0.32 : 0.85, flatShading: true,
       emissive: surface === 'glow' ? '#82bfff' : '#000000', emissiveIntensity: surface === 'glow' ? 1.4 : 0,
     }));
     const mesh = new THREE.SkinnedMesh(mergeGeometries(geometries)!, materials.get(key));
@@ -377,7 +401,7 @@ export function createDefense(kind: "arrow" | "cannon" | "frost", level: number,
     }
     if (!geometries.length) return;
     const key = "toy-defense";
-    if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72 }));
+    if (!materials.has(key)) materials.set(key, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, flatShading: true }));
     const mesh = new THREE.Mesh(mergeGeometries(geometries)!, materials.get(key));
     mesh.castShadow = mesh.receiveShadow = true;
     group.add(mesh);

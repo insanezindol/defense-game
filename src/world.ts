@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { createCharacter, animateCharacter, createDefense, projectilePosition } from "./world-models";
+import { createNeighborhood } from "./neighborhood";
 import { BattleParticles } from "./world-particles";
 import { PADS, TOWERS, type GameState } from "./game";
 import { CameraControls } from "./camera-controls";
@@ -24,6 +26,7 @@ export class World {
   resizeObserver: ResizeObserver;
   private materials = new Map<string, THREE.MeshStandardMaterial>();
   private composer: EffectComposer;
+  private ambientOcclusion: SSAOPass;
   private environment: THREE.WebGLRenderTarget;
   private particles = new BattleParticles();
   private effects: { group: THREE.Group; age: number; life: number; frost: boolean }[] = [];
@@ -49,19 +52,19 @@ export class World {
     this.renderer.shadowMap.autoUpdate = true;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.setClearColor("#c4eafa", 1);
+    this.renderer.setClearColor("#b5cbd0", 1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.9;
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.domElement.setAttribute(
       "aria-label",
       "3D 전장. 금색 원을 눌러 건물을 건설하세요.",
     );
     host.appendChild(this.renderer.domElement);
     this.scene.add(this.root);
-    this.scene.background = new THREE.Color('#c4eafa');
-    this.scene.add(new THREE.HemisphereLight("#fff9e9", "#82b29a", 1.1));
-    const sun = new THREE.DirectionalLight("#fff0db", 1.6);
-    sun.position.set(-25, 45, 25);
+    this.scene.background = new THREE.Color('#b5cbd0');
+    this.scene.add(new THREE.HemisphereLight("#dbe9fa", "#6c7150", 0.75));
+    const sun = new THREE.DirectionalLight("#ffe6bd", 2.6);
+    sun.position.set(-30, 48, 15);
     sun.castShadow = true;
     const shadowSize = host.clientWidth < 700 ? 1024 : 2048;
     sun.shadow.mapSize.set(shadowSize, shadowSize);
@@ -83,12 +86,15 @@ export class World {
     const room = new RoomEnvironment();
     this.environment = pmrem.fromScene(room, 0.04);
     this.scene.environment = this.environment.texture;
-    this.scene.environmentIntensity = 0.45;
+    this.scene.environmentIntensity = 0.28;
     room.dispose();
     pmrem.dispose();
     this.terrain();
     this.details();
     this.batchTerrain();
+    this.sign('동네슈퍼', 8, 3.35, 29.82, '#9f6150');
+    this.sign('빵 굽는 오후', 18, 3.35, 29.82, '#476f73');
+    this.sign('우리집', HOME.x, 2.5, HOME.z + 2.83, '#476f73', 1.15, 0.32);
     this.scene.add(this.particles.points);
     this.hero = createCharacter("hero", this.materials);
     this.root.add(this.hero);
@@ -114,7 +120,12 @@ export class World {
     (aura.material as THREE.MeshStandardMaterial).opacity = 0.2;
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.3, 0.45, 1.3));
+    this.ambientOcclusion = new SSAOPass(this.scene, this.camera, 1, 1, 8);
+    this.ambientOcclusion.kernelRadius = 1.4;
+    this.ambientOcclusion.minDistance = 0.001;
+    this.ambientOcclusion.maxDistance = 0.04;
+    this.composer.addPass(this.ambientOcclusion);
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.4, 1.5));
     this.composer.addPass(new OutputPass());
     this.controls = new CameraControls(this.camera, this.renderer.domElement, this.pick, onZoom);
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -133,6 +144,21 @@ export class World {
         }),
       );
     return this.materials.get(color)!;
+  }
+  private sign(text: string, x: number, y: number, z: number, color: string, width = 5.4, height = 0.65) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 768; canvas.height = 128;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.fillStyle = color; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#fff0d3'; context.font = 'bold 76px system-ui, sans-serif';
+    context.textAlign = 'center'; context.textBaseline = 'middle';
+    context.fillText(text, canvas.width / 2, canvas.height / 2, canvas.width - 40);
+    const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.MeshStandardMaterial({ map, roughness: 0.9 });
+    this.materials.set(`sign-${text}`, material);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+    sign.position.set(x, y, z); this.root.add(sign);
   }
   mesh(
     geo: THREE.BufferGeometry,
@@ -228,15 +254,12 @@ export class World {
       const x = Math.sin(i * 17.81) * 22, z = Math.cos(i * 9.17) * 32;
       const point = roadPoint(nearestRoadDistance({ x, z }));
       if (Math.hypot(point.x - x, point.z - z) < 3.7 || PADS.some(p => Math.hypot(p.x - x, p.z - z) < 2.2) || Math.hypot(x - HOME.x, z - HOME.z) < 6) continue;
-      this.cylinder(this.root, '#69b779', x, 0.14, z, 0.5, 0.65, 0.25, 8);
+      this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#759658', this.root, x, 0.22, z).scale.y = 0.65;
       this.mesh(new THREE.SphereGeometry(0.14, 6, 4), ['#fff3a6', '#ff9bc4', '#ffffff'][i % 3], this.root, x, 0.35, z);
     }
-    for (let i = 0; i < 12; i++) {
-      const x = i % 2 ? 22.5 : -22.5, z = -29 + Math.floor(i / 2) * 11;
-      this.cylinder(this.root, '#b58b64', x, 0.9, z, 0.16, 0.24, 1.8);
-      this.mesh(new THREE.SphereGeometry(1.2, 10, 8), i % 3 ? '#70c48d' : '#ffb8bc', this.root, x, 2.3, z);
-    }
+    this.root.add(createNeighborhood(this.materials));
   }
+
   private batchTerrain() {
     this.root.updateMatrixWorld(true);
     const batches = new Map<THREE.Material, THREE.Mesh[]>();
@@ -248,7 +271,10 @@ export class World {
       batches.set(obj.material, list);
     });
     for (const [material, meshes] of batches) {
-      const geometries = meshes.map(mesh => mesh.geometry.clone().applyMatrix4(mesh.matrixWorld));
+      const geometries = meshes.map(mesh => {
+        const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+        return geometry.applyMatrix4(mesh.matrixWorld);
+      });
       const geometry = mergeGeometries(geometries);
       geometries.forEach(geo => geo.dispose());
       if (!geometry) continue;
@@ -259,10 +285,16 @@ export class World {
     }
   }
   terrain() {
-    this.box(this.root, '#c4a682', 0, -0.65, 0, 48, 1.2, 68);
-    this.box(this.root, '#a8d898', 0, -0.06, 0, 48, 0.25, 68);
+    this.box(this.root, '#93674e', 0, -0.65, 0, 80, 1.2, 84);
+    this.box(this.root, '#859461', 0, -0.06, 0, 80, 0.25, 84);
+    this.box(this.root, '#9da77a', 0, 0.01, -3, 40, 0.12, 44);
+    for (const side of [-1, 1]) {
+      this.box(this.root, '#b9b5a0', side * 24.3, 0.08, 0, 6.6, 0.16, 68);
+      for (let z = -33; z < 34; z += 2) this.box(this.root, '#9a9b8a', side * 24.3, 0.165, z, 6.6, 0.012, 0.025);
+    }
+    this.box(this.root, '#b9b5a0', 0, 0.08, -26, 46, 0.16, 2.2);
     // Rendering and movement share the road samples.
-    for (const [width, y, color] of [[ROAD_HALF_WIDTH + 0.25, 0.09, '#fff0d1'], [ROAD_HALF_WIDTH, 0.12, '#b3bdce']] as const) {
+    for (const [width, y, color] of [[ROAD_HALF_WIDTH + 0.4, 0.09, '#d1c9b4'], [ROAD_HALF_WIDTH, 0.12, '#65757b']] as const) {
       const positions: number[] = [], indices: number[] = [];
       ROAD_POINTS.forEach((p, i) => {
         const before = ROAD_POINTS[Math.max(0, i - 1)], after = ROAD_POINTS[Math.min(ROAD_POINTS.length - 1, i + 1)];
@@ -282,37 +314,21 @@ export class World {
       this.box(this.root, '#fff5dc', p.x, 0.135, p.z, 0.12, 0.02, 1).rotation.y = Math.atan2(p.dx, p.dz);
     }
     PADS.forEach(p => {
-      this.cylinder(this.root, '#6caca2', p.x, 0.16, p.z, 1.42, 1.55, 0.22, 32);
+      this.cylinder(this.root, '#627e70', p.x, 0.16, p.z, 1.42, 1.55, 0.22, 32);
       const ring = this.mesh(new THREE.RingGeometry(1.08, 1.28, 40), '#fff3ac', this.root, p.x, 0.29, p.z);
       ring.rotation.x = -Math.PI / 2; this.pads.push(ring);
       this.box(this.root, '#fff8dc', p.x, 0.29, p.z, 0.65, 0.03, 0.12);
       this.box(this.root, '#fff8dc', p.x, 0.29, p.z, 0.12, 0.03, 0.65);
     });
-    const house = new THREE.Group(); house.position.set(HOME.x, 0, HOME.z); this.root.add(house);
-    this.box(house, '#ffeed7', 0, 2.2, 0, 6.4, 4.4, 5);
-    this.box(house, '#ffd3b6', 0, 0.4, 0, 6.7, 0.7, 5.3);
-    this.cylinder(house, '#f08e98', 0, 5.1, 0, 0, 5, 2.4, 4).rotation.y = Math.PI / 4;
-    this.box(house, '#77c5c4', 0, 1.3, -2.54, 1.3, 2.6, 0.12);
-    this.mesh(new THREE.SphereGeometry(0.08, 8, 6), '#ffe38c', house, 0.4, 1.2, -2.64);
-    for (const x of [-2, 2]) {
-      this.box(house, '#ffffff', x, 2.3, -2.55, 1.45, 1.65, 0.12);
-      this.box(house, '#87d8ec', x, 2.3, -2.63, 1.15, 1.35, 0.06);
-      this.box(house, '#ffffff', x, 2.3, -2.68, 0.07, 1.4, 0.04);
-    }
-    this.box(house, '#fff5db', 0, 0.15, -3.2, 2.5, 0.3, 1.4);
-    this.box(house, '#ec9fb1', 0, 3.05, -3, 2.1, 0.18, 1.1).rotation.x = 0.12;
-    this.box(house, '#c79762', 4.1, 0.45, -2, 1, 0.9, 0.85);
-    this.box(house, '#fff2c5', 4.1, 0.92, -2, 0.16, 0.04, 0.86);
-    this.cylinder(house, '#dfaf84', -4.1, 0.7, -2, 0.08, 0.08, 1.4);
-    this.box(house, '#ef96aa', -4.1, 1.5, -2, 0.8, 0.6, 0.7);
-    for (let i = 0; i < 9; i++) this.box(house, '#fff9e9', -5 + i * 1.25, 0.65, 3.15, 0.16, 1.3, 0.12);
-    this.box(house, '#fff9e9', 0, 0.8, 3.15, 10, 0.12, 0.12);
-    for (let i = 0; i < 6; i++) {
-      const x = i % 2 ? 30 : -30, z = -24 + Math.floor(i / 2) * 23;
-      this.box(this.root, ['#ffcaaf', '#c7c4ef', '#f8e4ac'][i % 3], x, 2, z, 6, 4, 6);
-      this.cylinder(this.root, '#88b9c1', x, 4.8, z, 0, 4.8, 2, 4).rotation.y = Math.PI / 4;
+    for (let d = 0; d < ROAD_LENGTH; d += 1.1) {
+      const p = roadPoint(d);
+      for (const side of [-1, 1]) {
+        this.box(this.root, '#d1c9b4', p.x - p.dz * side * (ROAD_HALF_WIDTH + 0.18), 0.16,
+          p.z + p.dx * side * (ROAD_HALF_WIDTH + 0.18), 0.28, 0.16, 0.95).rotation.y = Math.atan2(p.dx, p.dz);
+      }
     }
   }
+
   tower(kind: keyof typeof TOWERS, level: number) { return createDefense(kind, level, this.materials); }
   setZoom(value: number) { this.controls.setZoom(value); }
   resetView() { this.controls.reset(); }
@@ -344,6 +360,7 @@ export class World {
     this.controls.resize(width, height);
     this.renderer.setSize(width, height);
     this.composer.setSize(width, height);
+    this.ambientOcclusion.enabled = width >= 700;
     this.particles.material.uniforms.pixelRatio.value = this.renderer.getPixelRatio();
   }
   private remove(g: THREE.Group) {
@@ -504,6 +521,9 @@ export class World {
     this.shake = Math.max(0, this.shake - dt);
     this.controls.apply();
     if (this.shake > 0) this.camera.position.x += Math.sin(s.time * 70) * this.shake * 0.5;
+    // SSAOPass refreshes projection only on resize; gestures also change it.
+    this.ambientOcclusion.ssaoMaterial.uniforms.cameraProjectionMatrix.value.copy(this.camera.projectionMatrix);
+    this.ambientOcclusion.ssaoMaterial.uniforms.cameraInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
     this.composer.render();
   }
   dispose() {
@@ -517,7 +537,7 @@ export class World {
         if (obj.userData.effectMaterial) (obj.material as THREE.Material).dispose();
       }
     });
-    this.materials.forEach(material => material.dispose());
+    this.materials.forEach(material => { material.map?.dispose(); material.dispose(); });
     this.particles.dispose();
     for (const pass of this.composer.passes) pass.dispose();
     this.composer.dispose();

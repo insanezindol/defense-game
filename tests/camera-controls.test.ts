@@ -47,12 +47,8 @@ test("pan grabs the ground and cursor zoom keeps its anchor", () => {
   assert.ok(Math.abs(after.y - screen.y + 20 / 300) < 1e-9);
 });
 
-test("orbit, zoom and pan clamp; resize preserves pose choices; reset restores default", () => {
+test("zoom and pan clamp; resize preserves fixed view; reset restores default", () => {
   const { camera, controls } = setup();
-  controls.rotate(120, 10000);
-  assert.ok(Math.abs(controls.pitch - Math.PI * 75 / 180) < 1e-9);
-  controls.rotate(0, -20000);
-  assert.ok(Math.abs(controls.pitch - Math.PI / 6) < 1e-9);
   controls.pan(500, 300, 100000, 100000);
   assert.ok(Math.abs(controls.target.x) <= 24 && Math.abs(controls.target.z) <= 34);
   controls.setZoom(100);
@@ -98,24 +94,39 @@ test("only taps select; drag, pinch, cancellation and lost capture cannot select
   assert.equal(captures.size, 0);
 });
 
-test("right drag orbits, two touches orbit and pinch, and center zoom keeps target", () => {
+test("right drag is ignored, two touches pan and pinch without rotating", () => {
   const { camera, controls, pointer, taps } = setup();
   const yaw = controls.yaw;
   pointer("pointerdown", 500, 300, 1, "mouse", 2);
   pointer("pointermove", 550, 320, 1, "mouse", 2);
   pointer("pointerup", 550, 320, 1, "mouse", 2);
-  assert.ok(controls.yaw < yaw);
+  assert.equal(controls.yaw, yaw);
   assert.equal(taps(), 0);
   controls.reset();
   pointer("pointerdown", 400, 300, 2, "touch");
   pointer("pointerdown", 600, 300, 3, "touch");
   pointer("pointermove", 650, 320, 3, "touch");
   assert.ok(camera.zoom > 1);
-  assert.ok(controls.yaw < yaw);
+  assert.equal(controls.yaw, yaw);
   const target = controls.target.clone();
   controls.setZoom(1.5);
   assert.deepEqual(controls.target, target);
-  controls.yaw = Math.PI / 2;
-  const forward = controls.screenInput(0, -1);
-  assert.ok(Math.abs(forward.x + 1) < 1e-9 && Math.abs(forward.y) < 1e-9);
+  assert.ok(controls.target.length() > 0);
+  assert.ok(Math.abs(controls.screenInput(0, -1).length() - 1) < 1e-9);
+});
+
+
+test("parallel two-finger drag moves the ground while preserving angle and zoom", () => {
+  const { camera, controls, pointer, taps } = setup();
+  const orientation = camera.quaternion.clone();
+  pointer("pointerdown", 400, 300, 2, "touch");
+  pointer("pointerdown", 600, 300, 3, "touch");
+  pointer("pointermove", 430, 320, 2, "touch");
+  pointer("pointermove", 630, 320, 3, "touch");
+  assert.ok(controls.target.length() > 1);
+  assert.ok(camera.quaternion.angleTo(orientation) < 1e-7);
+  assert.ok(Math.abs(camera.zoom - 1) < 1e-9);
+  pointer("pointerup", 430, 320, 2, "touch");
+  pointer("pointerup", 630, 320, 3, "touch");
+  assert.equal(taps(), 0);
 });
