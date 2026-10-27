@@ -15,11 +15,11 @@ test("camera zoom enlarges the scene, clamps its range, and survives viewport fi
   assert.equal(camera.zoom, 2);
   assert.ok(camera.position.distanceTo(position) < 1e-8, 'resize must not counteract user zoom');
   setCameraZoom(camera, 100);
-  assert.equal(camera.zoom, 2.5);
+  assert.equal(camera.zoom, 5);
   setCameraZoom(camera, 0);
-  assert.equal(camera.zoom, 0.65);
+  assert.equal(camera.zoom, 1);
   setCameraZoom(camera, NaN);
-  assert.equal(camera.zoom, 0.65);
+  assert.equal(camera.zoom, 1);
   setCameraZoom(camera, 1);
   assert.equal(camera.zoom, 1);
 });

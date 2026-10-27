@@ -8,6 +8,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { createCharacter, animateCharacter, createDefense, projectilePosition } from "./world-models";
 import { createNeighborhood } from "./neighborhood";
+import { loadNeighborhoodModels, createResident, disposeNeighborhoodModels, type NeighborhoodModels } from './resident-models';
 import { BattleParticles } from "./world-particles";
 import { PADS, TOWERS, type GameState } from "./game";
 import { CameraControls } from "./camera-controls";
@@ -27,6 +28,7 @@ export class World {
   private materials = new Map<string, THREE.MeshStandardMaterial>();
   private composer: EffectComposer;
   private ambientOcclusion: SSAOPass;
+  private bloom: UnrealBloomPass;
   private environment: THREE.WebGLRenderTarget;
   private particles = new BattleParticles();
   private effects: { group: THREE.Group; age: number; life: number; frost: boolean }[] = [];
@@ -36,20 +38,23 @@ export class World {
   private heroPosition = new THREE.Vector2();
   private controls: CameraControls;
   private shake = 0;
+  private neighborhood = new THREE.Group();
+  private models?: NeighborhoodModels;
+  private disposed = false;
+  private lastShadowTime = -Infinity;
   constructor(
     public host: HTMLElement,
     public onPad: (pad: number) => void,
     onZoom?: (zoom: number) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: false,
       alpha: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, host.clientWidth < 700 ? 1.25 : 1.5));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.shadowMap.autoUpdate = true;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.setClearColor("#b5cbd0", 1);
@@ -66,8 +71,7 @@ export class World {
     const sun = new THREE.DirectionalLight("#ffe6bd", 2.6);
     sun.position.set(-30, 48, 15);
     sun.castShadow = true;
-    const shadowSize = host.clientWidth < 700 ? 1024 : 2048;
-    sun.shadow.mapSize.set(shadowSize, shadowSize);
+    sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, {
       left: -40,
       right: 40,
@@ -91,7 +95,10 @@ export class World {
     pmrem.dispose();
     this.terrain();
     this.details();
+    this.neighborhood.removeFromParent();
     this.batchTerrain();
+    this.batchTerrain(this.neighborhood);
+    this.root.add(this.neighborhood);
     this.sign('동네슈퍼', 8, 3.35, 29.82, '#9f6150');
     this.sign('빵 굽는 오후', 18, 3.35, 29.82, '#476f73');
     this.sign('우리집', HOME.x, 2.5, HOME.z + 2.83, '#476f73', 1.15, 0.32);
@@ -116,21 +123,42 @@ export class World {
       0,
     );
     aura.rotation.x = -Math.PI / 2;
+    aura.name = 'attack-range';
     (aura.material as THREE.MeshStandardMaterial).transparent = true;
     (aura.material as THREE.MeshStandardMaterial).opacity = 0.2;
-    this.composer = new EffectComposer(this.renderer);
+    const renderTarget = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType, samples: Math.min(4, this.renderer.capabilities.maxSamples),
+    });
+    this.composer = new EffectComposer(this.renderer, renderTarget);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.ambientOcclusion = new SSAOPass(this.scene, this.camera, 1, 1, 8);
     this.ambientOcclusion.kernelRadius = 1.4;
     this.ambientOcclusion.minDistance = 0.001;
     this.ambientOcclusion.maxDistance = 0.04;
     this.composer.addPass(this.ambientOcclusion);
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.4, 1.5));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.4, 1.5);
+    this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.controls = new CameraControls(this.camera, this.renderer.domElement, this.pick, onZoom);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
+    void loadNeighborhoodModels().then(models => {
+      if (this.disposed) { disposeNeighborhoodModels(models); return; }
+      this.models = models;
+      this.remove(this.neighborhood);
+      this.neighborhood = createNeighborhood(this.materials, models.houses);
+      this.batchTerrain(this.neighborhood);
+      this.root.add(this.neighborhood);
+      const hero = createResident(models.residents[0], 'hero', this.materials);
+      hero.position.copy(this.hero.position); hero.quaternion.copy(this.hero.quaternion);
+      hero.add(this.hero.getObjectByName('attack-range')!);
+      this.remove(this.hero); this.hero = hero; this.root.add(hero);
+      for (const [id, enemy] of this.enemies) if (enemy.userData.kind === 'grunt') {
+        this.remove(enemy); this.enemies.delete(id);
+      }
+      this.renderer.shadowMap.needsUpdate = true;
+    }).catch(error => { if (!this.disposed) console.warn('3D models unavailable; using local fallback geometry.', error); });
   }
 
   private material(color: string) {
@@ -257,15 +285,16 @@ export class World {
       this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#759658', this.root, x, 0.22, z).scale.y = 0.65;
       this.mesh(new THREE.SphereGeometry(0.14, 6, 4), ['#fff3a6', '#ff9bc4', '#ffffff'][i % 3], this.root, x, 0.35, z);
     }
-    this.root.add(createNeighborhood(this.materials));
+    this.neighborhood = createNeighborhood(this.materials);
+    this.root.add(this.neighborhood);
   }
 
-  private batchTerrain() {
-    this.root.updateMatrixWorld(true);
+  private batchTerrain(parent = this.root) {
+    parent.updateMatrixWorld(true);
     const batches = new Map<THREE.Material, THREE.Mesh[]>();
-    this.root.traverse(obj => {
+    parent.traverse(obj => {
       if (!(obj instanceof THREE.Mesh) || !(obj.material instanceof THREE.MeshStandardMaterial) ||
-        this.pads.includes(obj)) return;
+        this.pads.includes(obj) || obj.userData.sharedAsset) return;
       const list = batches.get(obj.material) ?? [];
       list.push(obj);
       batches.set(obj.material, list);
@@ -281,13 +310,12 @@ export class World {
       const batch = new THREE.Mesh(geometry, material);
       batch.castShadow = true; batch.receiveShadow = true;
       for (const mesh of meshes) { mesh.removeFromParent(); mesh.geometry.dispose(); }
-      this.root.add(batch);
+      parent.add(batch);
     }
   }
   terrain() {
     this.box(this.root, '#93674e', 0, -0.65, 0, 80, 1.2, 84);
     this.box(this.root, '#859461', 0, -0.06, 0, 80, 0.25, 84);
-    this.box(this.root, '#9da77a', 0, 0.01, -3, 40, 0.12, 44);
     for (const side of [-1, 1]) {
       this.box(this.root, '#b9b5a0', side * 24.3, 0.08, 0, 6.6, 0.16, 68);
       for (let z = -33; z < 34; z += 2) this.box(this.root, '#9a9b8a', side * 24.3, 0.165, z, 6.6, 0.012, 0.025);
@@ -357,16 +385,29 @@ export class World {
   resize() {
     const { width, height } = this.host.getBoundingClientRect();
     if (width < 1 || height < 1) return;
+    const pixelRatio = Math.min(devicePixelRatio, 3, Math.sqrt(3_000_000 / (width * height)));
     this.controls.resize(width, height);
+    for (const material of [this.ambientOcclusion.ssaoMaterial, this.ambientOcclusion.depthRenderMaterial]) {
+      material.uniforms.cameraNear.value = this.camera.near;
+      material.uniforms.cameraFar.value = this.camera.far;
+    }
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height);
+    this.composer.setPixelRatio(pixelRatio);
     this.composer.setSize(width, height);
     this.ambientOcclusion.enabled = width >= 700;
+    this.bloom.enabled = width >= 700;
     this.particles.material.uniforms.pixelRatio.value = this.renderer.getPixelRatio();
   }
   private remove(g: THREE.Group) {
+    this.renderer.shadowMap.needsUpdate = true;
+    if (g.userData.resident) {
+      const mixer = g.userData.resident.mixer as THREE.AnimationMixer;
+      mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot());
+    }
     g.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
+        if (!obj.userData.sharedAsset) obj.geometry.dispose();
         if (obj instanceof THREE.SkinnedMesh) obj.skeleton.dispose();
         if (obj.userData.effectMaterial) (obj.material as THREE.Material).dispose();
       }
@@ -405,9 +446,12 @@ export class World {
     for (const e of s.enemies) {
       let group = this.enemies.get(e.id);
       if (!group) {
-        group = createCharacter(e.kind === 'grunt' && e.id % 3 === 0 ? 'spam' : e.kind, this.materials);
+        const kind = e.kind === 'grunt' && e.id % 3 === 0 ? 'spam' : e.kind;
+        group = kind === 'grunt' && this.models ? createResident(this.models.residents[1], 'grunt', this.materials) :
+          createCharacter(kind, this.materials);
         this.enemies.set(e.id, group);
         this.root.add(group);
+        this.renderer.shadowMap.needsUpdate = true;
       }
       if (group.userData.hp !== undefined && e.hp < group.userData.hp) {
         this.particles.emit(e.x, 1, e.z, e.slow > 0 ? '#70dfff' : '#ffcc7d', 7, 1.6, 0.4);
@@ -439,6 +483,7 @@ export class World {
         group.position.set(pad.x, 0.15, pad.z);
         this.root.add(group);
         this.towers.set(tower.pad, { level: tower.level, group });
+        this.renderer.shadowMap.needsUpdate = true;
         if (!reset) this.particles.emit(pad.x, 0.5, pad.z, '#ffd28c', 24, 2);
       }
       const group = this.towers.get(tower.pad)!.group;
@@ -524,20 +569,27 @@ export class World {
     // SSAOPass refreshes projection only on resize; gestures also change it.
     this.ambientOcclusion.ssaoMaterial.uniforms.cameraProjectionMatrix.value.copy(this.camera.projectionMatrix);
     this.ambientOcclusion.ssaoMaterial.uniforms.cameraInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+    // Reuse static shadows; refresh moving actors at 30Hz, once across all composer passes.
+    if (s.time < this.lastShadowTime || s.time - this.lastShadowTime + 1e-6 >= 1 / 30) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.lastShadowTime = s.time;
+    }
     this.composer.render();
   }
   dispose() {
+    this.disposed = true;
     this.resizeObserver.disconnect();
     this.controls.dispose();
     this.renderer.setAnimationLoop(null);
     this.scene.traverse(obj => {
       if (obj instanceof THREE.Mesh) {
-        obj.geometry.dispose();
+        if (!obj.userData.sharedAsset) obj.geometry.dispose();
         if (obj instanceof THREE.SkinnedMesh) obj.skeleton.dispose();
         if (obj.userData.effectMaterial) (obj.material as THREE.Material).dispose();
       }
     });
     this.materials.forEach(material => { material.map?.dispose(); material.dispose(); });
+    if (this.models) disposeNeighborhoodModels(this.models);
     this.particles.dispose();
     for (const pass of this.composer.passes) pass.dispose();
     this.composer.dispose();

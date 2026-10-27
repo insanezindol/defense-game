@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { HOME } from './battlefield';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { createHouseModel } from './resident-models';
 
-export function createNeighborhood(materials = new Map<string, THREE.MeshStandardMaterial>()) {
+export function createNeighborhood(materials = new Map<string, THREE.MeshStandardMaterial>(), houses: GLTF[] = []) {
   const root = new THREE.Group();
   const cream = '#eee3ca', trim = '#fff0d3', dark = '#334852', glass = '#42777f';
   const wood = '#93674e', leaf = '#558357', brick = '#b27658';
@@ -59,6 +61,13 @@ export function createNeighborhood(materials = new Map<string, THREE.MeshStandar
   function house(x: number, z: number, wall: string, roofColor: string, floors: number, index: number, home = false) {
     const g = group(home ? 'home' : 'house', x, z);
     const w = home ? 7 : 6, d = 5.4, h = floors * 2.65 + 0.5;
+    if (houses.length) {
+      box(g, '#b9b5a0', 0, 0.12, 0, w + 2.5, 0.24, 8.8);
+      g.add(createHouseModel(houses[index % houses.length], w));
+      planter(g, -w / 2 + 0.6, 3.5);
+      fence(g, 0, -3.5, w + 1.3);
+      return g;
+    }
     box(g, '#b9b5a0', 0, 0.12, 0, w + 2.5, 0.24, d + 3.4);
     box(g, brick, 0, 0.5, 0, w + 0.2, 0.75, d + 0.2);
     box(g, wall, 0, (h + 0.6) / 2, 0, w, h - 0.6, d);
@@ -129,7 +138,7 @@ export function createNeighborhood(materials = new Map<string, THREE.MeshStandar
     const g = house(side * 29, -25 + Math.floor(i / 2) * 16, colors[i % 4], roofs[i % 3], i % 3 ? 2 : 1, i);
     g.rotation.y = -side * Math.PI / 2;
   }
-  for (let i = 0; i < 4; i++) house(-16 + i * 10, -30, colors[(i + 1) % 4], roofs[(i + 1) % 3], 2, i);
+  for (let i = 0; i < 4; i++) house(-16 + i * 10, -22, colors[(i + 1) % 4], roofs[(i + 1) % 3], 2, i);
 
   function shop(x: number, z: number, color: string) {
     const g = group('shop', x, z);

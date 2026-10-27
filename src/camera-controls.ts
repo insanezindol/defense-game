@@ -10,8 +10,11 @@ export class CameraControls {
   readonly yaw = DEFAULT_YAW;
   readonly pitch = DEFAULT_PITCH;
   private distance = 100;
+  private defaultZoom = 1;
   private pointers = new Map<number, Pointer>();
   private gesturing = false;
+  private pinchDistance = 0;
+  private pinchZoom = 1;
   private ray = new THREE.Raycaster();
   private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
@@ -22,6 +25,7 @@ export class CameraControls {
     private onZoom?: (zoom: number) => void,
   ) {
     this.resize(element.clientWidth, element.clientHeight);
+    this.reset();
     element.addEventListener("pointerdown", this.pointerDown);
     element.addEventListener("pointermove", this.pointerMove);
     element.addEventListener("pointerup", this.pointerUp);
@@ -43,8 +47,8 @@ export class CameraControls {
   }
 
   resize(width: number, height: number) {
+    this.defaultZoom = width < 700 ? 1.7 : 1;
     this.camera.aspect = Math.max(width, 1) / Math.max(height, 1);
-    this.camera.updateProjectionMatrix();
     const outward = new THREE.Vector3(Math.sin(DEFAULT_YAW) * Math.cos(DEFAULT_PITCH),
       Math.sin(DEFAULT_PITCH), Math.cos(DEFAULT_YAW) * Math.cos(DEFAULT_PITCH));
     const right = new THREE.Vector3(Math.cos(DEFAULT_YAW), 0, -Math.sin(DEFAULT_YAW));
@@ -57,15 +61,19 @@ export class CameraControls {
         Math.abs(corner.dot(right)) / (tangent * this.camera.aspect), Math.abs(corner.dot(up)) / tangent,
       ));
     }
+    // Keep depth precision around the visible neighborhood, including the pan bounds.
+    this.camera.near = Math.max(1, this.distance - 120);
+    this.camera.far = this.distance + 120;
+    this.camera.updateProjectionMatrix();
     this.apply();
   }
 
   reset() {
     this.target.set(0, 0, 0);
-    this.camera.zoom = 1;
+    this.camera.zoom = this.defaultZoom;
     this.camera.updateProjectionMatrix();
     this.apply();
-    this.onZoom?.(1);
+    this.onZoom?.(this.camera.zoom);
   }
 
   private groundPoint(clientX: number, clientY: number) {
@@ -109,7 +117,10 @@ export class CameraControls {
     this.pointers.set(event.pointerId, {
       x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, button: event.button,
     });
-    if (this.pointers.size > 1) this.gesturing = true;
+    if (this.pointers.size > 1) {
+      this.gesturing = true;
+      this.pinchDistance = 0;
+    }
     this.element.setPointerCapture(event.pointerId);
   };
 
@@ -120,6 +131,10 @@ export class CameraControls {
     const points = [...this.pointers.values()];
     const oldX = pointer.x, oldY = pointer.y;
     const beforeDistance = points.length >= 2 ? Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) : 0;
+    if (points.length >= 2 && !this.pinchDistance) {
+      this.pinchDistance = beforeDistance;
+      this.pinchZoom = this.camera.zoom;
+    }
     const centerX = points.length >= 2 ? (points[0].x + points[1].x) / 2 : 0;
     const centerY = points.length >= 2 ? (points[0].y + points[1].y) / 2 : 0;
     pointer.x = event.clientX;
@@ -130,12 +145,13 @@ export class CameraControls {
       const nextX = (points[0].x + points[1].x) / 2, nextY = (points[0].y + points[1].y) / 2;
       this.pan(centerX, centerY, nextX, nextY);
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
-      if (beforeDistance > 0 && distance > 0) this.setZoom(this.camera.zoom * distance / beforeDistance, nextX, nextY);
+      if (this.pinchDistance > 0 && distance > 0) this.setZoom(this.pinchZoom * distance / this.pinchDistance, nextX, nextY);
     } else this.pan(oldX, oldY, pointer.x, pointer.y);
   };
 
   private release(event: PointerEvent) {
     this.pointers.delete(event.pointerId);
+    this.pinchDistance = 0;
     if (this.element.hasPointerCapture(event.pointerId)) this.element.releasePointerCapture(event.pointerId);
   }
 

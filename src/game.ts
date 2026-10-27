@@ -72,7 +72,7 @@ export interface Shot {
   life: number;
 }
 export interface GameState {
-  version: 3;
+  version: 4;
   difficulty: Difficulty;
   phase: Phase;
   wave: number;
@@ -163,7 +163,7 @@ function moveCharacter(s: GameState, position: { x: number; z: number }, dx: num
 
 export function newGame(difficulty: Difficulty = DEFAULT_DIFFICULTY): GameState {
   return {
-    version: 3,
+    version: 4,
     difficulty,
     phase: "ready",
     wave: 0,
@@ -417,10 +417,13 @@ export function restore(raw: string | null): GameState | null {
     const s = JSON.parse(raw) as GameState;
     const legacy = (s.version as number) === 1;
     const oldMap = (s.version as number) === 2;
+    const previousMap = (s.version as number) === 3;
+    const shortenedMap = legacy || oldMap || previousMap;
+    const padLimit = legacy ? 8 : shortenedMap ? 24 : PADS.length;
     // Saves created before difficulty selection continue with the Easy preset.
     s.difficulty ??= DEFAULT_DIFFICULTY;
     if (
-      (!legacy && !oldMap && s.version !== 3) ||
+      (!shortenedMap && s.version !== 4) ||
       !Object.hasOwn(DIFFICULTIES, s.difficulty) ||
       !["ready", "battle", "won", "lost"].includes(s.phase) ||
       !Number.isInteger(s.wave) ||
@@ -453,15 +456,14 @@ export function restore(raw: string | null): GameState | null {
       s.hp > 100 ||
       s.heroLevel < 1 ||
       s.heroLevel > 10 ||
-      s.towers.length > PADS.length ||
+      s.towers.length > padLimit ||
       s.enemies.length > 100
     )
       return null;
     const used = new Set<number>();
     for (const t of s.towers) {
       if (
-        !PADS[t.pad] ||
-        (legacy && t.pad >= 8) ||
+        !Number.isInteger(t.pad) || t.pad < 0 || t.pad >= padLimit ||
         used.has(t.pad) ||
         !TOWERS[t.kind] ||
         !Number.isInteger(t.level) ||
@@ -481,12 +483,15 @@ export function restore(raw: string | null): GameState | null {
       )
         return null;
     if (s.enemies.some(e => (e.progress !== undefined && !Number.isFinite(e.progress)) || (e.lane !== undefined && !Number.isFinite(e.lane)))) return null;
+    // The removed straight and 64-segment semicircle preceded the retained road.
+    const removedLength = 26 + 64 * 10 * Math.sin(Math.PI / 128);
     if (legacy) {
       s.towers.forEach(t => { t.pad *= 3; });
-      const oldHero = roadPoint(Math.max(0, Math.min(1, (s.hero.z + 12) / 20.2)) * ROAD_LENGTH);
+      const oldProgress = (z: number) => Math.max(0, Math.min(1, (z + 12) / 20.2)) * (ROAD_LENGTH + removedLength) - removedLength;
+      const oldHero = roadPoint(oldProgress(s.hero.z));
       s.hero.x = oldHero.x; s.hero.z = oldHero.z;
       for (const e of s.enemies) {
-        e.progress = Math.max(0, Math.min(1, (e.z + 12) / 20.2)) * ROAD_LENGTH;
+        e.progress = oldProgress(e.z);
         e.lane = Math.sign(e.x) * 0.25;
       }
     }
@@ -498,7 +503,21 @@ export function restore(raw: string | null): GameState | null {
         e.progress = nearestRoadDistance({ x: e.x, z: centerZ * 0.625 - 2 });
       }
     }
-    s.version = 3;
+    if (previousMap) {
+      for (const e of s.enemies) {
+        // Translating stored progress also preserves lane offsets at bend vertices.
+        e.progress = e.progress === undefined ? nearestRoadDistance(e) : Math.max(0, e.progress - removedLength);
+      }
+    }
+    if (shortenedMap) {
+      s.towers = s.towers.filter(t => {
+        if (t.pad >= 6) { t.pad -= 6; return true; }
+        s.gold += TOWERS[t.kind].cost;
+        for (let level = 1; level < t.level; level++) s.gold += towerUpgradeCost({ ...t, level });
+        return false;
+      });
+    }
+    s.version = 4;
     s.shots = [];
     clearStructureOverlaps(s);
     return s;

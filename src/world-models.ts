@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Enemy } from "./game";
+import { animateResident } from './resident-models';
 
 type CharacterKind = Enemy["kind"] | "hero" | "spam";
-export const MIN_ZOOM = 0.65;
-export const MAX_ZOOM = 2.5;
+export const MIN_ZOOM = 1;
+export const MAX_ZOOM = 5;
 
 export function setCameraZoom(camera: THREE.PerspectiveCamera, value: number) {
   if (Number.isFinite(value)) camera.zoom = THREE.MathUtils.clamp(value, MIN_ZOOM, MAX_ZOOM);
@@ -306,6 +307,7 @@ export function createCharacter(kind: CharacterKind, materials = new Map<string,
 }
 
 export function animateCharacter(model: THREE.Group, time: number, walking: boolean, attacking: boolean) {
+  if (model.userData.resident) return animateResident(model, time, walking, attacking);
   const stride = walking ? Math.sin(time * 10) * 0.55 : 0;
   model.getObjectByName("leg-left")!.rotation.x = stride;
   model.getObjectByName("leg-right")!.rotation.x = walking ? -stride : 0;

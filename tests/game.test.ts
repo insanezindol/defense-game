@@ -41,6 +41,57 @@ test('interior towers attack both adjacent roads at level one, including outer l
   }
 });
 
+test('version three migration refunds removed towers and preserves the full remaining battle', () => {
+  const old = { ...newGame(), version: 3, gold: 321, hp: 67, heroLevel: 4, wave: 7, phase: 'battle',
+    towers: Array.from({ length: 24 }, (_, pad) => ({ pad, kind: 'arrow', level: pad < 6 ? 3 : 2, cooldown: 1 })),
+    enemies: [
+      { id: 100, x: 2, z: -7.25, progress: 51.70638625466387, lane: 0.25, hp: 77, maxHp: 100, speed: 1, kind: 'grunt', slow: 2, reward: 9 },
+      { id: 101, x: 12, z: -17, progress: 26, lane: 0, hp: 88, maxHp: 100, speed: 1, kind: 'grunt', slow: 0, reward: 9 },
+    ] };
+  const s = restore(JSON.stringify(old))!;
+  assert.ok(s);
+  assert.equal(s.version, 4);
+  // Each level-three arrow tower invested 70 + 70 + 95 gold.
+  assert.equal(s.gold, 321 + 6 * 235);
+  assert.equal(s.hp, 67); assert.equal(s.heroLevel, 4); assert.equal(s.wave, 7); assert.equal(s.phase, 'battle');
+  assert.deepEqual(s.towers, old.towers.slice(6).map(t => ({ ...t, pad: t.pad - 6 })));
+  assert.ok(Math.abs(s.enemies[0].x - 2) < 1e-8);
+  assert.ok(Math.abs(s.enemies[0].z + 7.25) < 1e-8);
+  assert.ok(Math.abs(s.enemies[0].progress! - 10) < 1e-8);
+  assert.equal(s.enemies[0].hp, 77); assert.equal(s.enemies[0].slow, 2);
+  assert.equal(s.enemies[1].x, 12); assert.equal(s.enemies[1].z, -7); assert.equal(s.enemies[1].hp, 88);
+  assert.deepEqual(restore(serialize(s)), s);
+  assert.deepEqual(restore(serialize(restore(serialize(s))!)), s);
+});
+
+test('save validation accepts old pad limits but rejects invalid old and new pad indexes', () => {
+  for (const [version, count] of [[1, 8], [2, 24], [3, 24], [4, 18]]) {
+    const old = { ...newGame(), version, towers: Array.from({ length: count }, (_, pad) =>
+      ({ pad, kind: 'cannon', level: 1, cooldown: 0 })) };
+    assert.ok(restore(JSON.stringify(old)), `version ${version} valid capacity`);
+    old.towers.push({ pad: count, kind: 'cannon', level: 1, cooldown: 0 });
+    assert.equal(restore(JSON.stringify(old)), null);
+    old.towers = [{ pad: count, kind: 'cannon', level: 1, cooldown: 0 }];
+    assert.equal(restore(JSON.stringify(old)), null);
+    old.towers[0].pad = 0.5;
+    assert.equal(restore(JSON.stringify(old)), null);
+  }
+});
+
+test('version three enemies retain curved-road lane positions and missing progress is projected', () => {
+  const old = { ...newGame(), version: 3, enemies: [
+    { id: 100, x: 13.56018114791192, z: 3.6194810427727786, progress: 107.13247539427212, lane: 0.35,
+      hp: 77, maxHp: 100, speed: 1, kind: 'grunt', slow: 0, reward: 9 },
+    { id: 101, x: 0, z: 3, hp: 88, maxHp: 100, speed: 1, kind: 'runner', slow: 0, reward: 9 },
+  ] };
+  const s = restore(JSON.stringify(old))!;
+  for (let i = 0; i < old.enemies.length; i++) {
+    assert.ok(Math.hypot(s.enemies[i].x - old.enemies[i].x, s.enemies[i].z - old.enemies[i].z) < 1e-8);
+    assert.equal(s.enemies[i].hp, old.enemies[i].hp);
+  }
+  assert.deepEqual(restore(serialize(s)), s);
+});
+
 test('version two saves project active enemies onto the compact map without changing their HP', () => {
   const old = { ...newGame(), version: 2, gold: 321, wave: 7, phase: 'battle',
     hero: { x: 0, z: 1, cooldown: 0 },
@@ -48,13 +99,13 @@ test('version two saves project active enemies onto the compact map without chan
     enemies: [{ id: 100, x: 0, z: -10, progress: 75, lane: 0,
       hp: 77, maxHp: 100, speed: 1, kind: 'grunt', slow: 0, reward: 9 }] };
   const s = restore(JSON.stringify(old))!;
-  assert.equal(s.version, 3);
+  assert.equal(s.version, 4);
   assert.equal(s.enemies[0].x, 0);
   assert.equal(s.enemies[0].z, -7);
   assert.equal(s.enemies[0].hp, 77);
   assert.equal(s.gold, 321);
   assert.equal(s.wave, 7);
-  assert.deepEqual(s.towers, old.towers);
+  assert.deepEqual(s.towers, old.towers.map(t => ({ ...t, pad: t.pad - 6 })));
   assert.deepEqual(restore(serialize(s)), s);
 });
 
@@ -73,7 +124,7 @@ test('empty sites are walkable and construction immediately separates the reside
   assert.ok(s.hero.z > before + 1);
 });
 
-test('every enemy size stays on the S road with all 24 structures and reaches only the final door', () => {
+test('every enemy size stays on the S road with all 18 structures and reaches only the final door', () => {
   for (const kind of ['grunt', 'runner', 'brute', 'boss'] as const) {
     const s = newGame(); s.gold = 10000;
     for (let pad = 0; pad < PADS.length; pad++) build(s, pad, 'arrow');
@@ -97,7 +148,7 @@ test('every enemy size stays on the S road with all 24 structures and reaches on
 
 test('targeting follows road progress even when two enemies share a Z coordinate', () => {
   const s = newGame(); startWave(s); s.spawned = s.total;
-  s.hero.x = -6; s.hero.z = -24;
+  s.hero.x = 4; s.hero.z = -10;
   s.enemies = [6, 10].map((progress, i) => ({ id: 100 + i, ...roadPoint(progress), progress,
     hp: 1000, maxHp: 1000, speed: 1, kind: 'grunt' as const, slow: 0, reward: 9 }));
   update(s, 0);
@@ -110,8 +161,8 @@ test('legacy saves keep money, waves, tower levels and active enemies on the new
     towers: [{ pad: 0, kind: 'arrow', level: 3, cooldown: 1 }, { pad: 7, kind: 'cannon', level: 2, cooldown: 0 }],
     enemies: [{ id: 10, x: 5, z: 0, hp: 77, maxHp: 100, speed: 0.8, kind: 'boss', slow: 0, reward: 110 }] };
   const s = restore(JSON.stringify(old))!;
-  assert.ok(s); assert.equal(s.version, 3); assert.equal(s.gold, 321); assert.equal(s.wave, 7);
-  assert.deepEqual(s.towers.map(t => [t.pad, t.level]), [[0, 3], [21, 2]]);
+  assert.ok(s); assert.equal(s.version, 4); assert.equal(s.gold, 556); assert.equal(s.wave, 7);
+  assert.deepEqual(s.towers.map(t => [t.pad, t.level]), [[15, 2]]);
   assert.equal(s.enemies[0].hp, 77);
   const center = roadPoint(nearestRoadDistance(s.enemies[0]));
   assert.ok(Math.hypot(s.enemies[0].x - center.x, s.enemies[0].z - center.z) < ROAD_HALF_WIDTH);

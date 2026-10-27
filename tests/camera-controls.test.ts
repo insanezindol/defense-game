@@ -23,9 +23,10 @@ function setup(width = 1000, height = 600) {
   return { camera, controls, handlers, captures, pointer, taps: () => taps };
 }
 
-test("default view fits all map corners in landscape and portrait", () => {
+test("100% overview fits all map corners in landscape and portrait", () => {
   for (const [width, height] of [[1200, 600], [400, 900]]) {
-    const { camera } = setup(width, height);
+    const { camera, controls } = setup(width, height);
+    controls.setZoom(1);
     for (const x of [-24, 24]) for (const z of [-34, 34]) {
       const point = new THREE.Vector3(x, 0, z).project(camera);
       assert.ok(Math.abs(point.x) <= 0.91 && Math.abs(point.y) <= 0.91);
@@ -52,21 +53,48 @@ test("zoom and pan clamp; resize preserves fixed view; reset restores default", 
   controls.pan(500, 300, 100000, 100000);
   assert.ok(Math.abs(controls.target.x) <= 24 && Math.abs(controls.target.z) <= 34);
   controls.setZoom(100);
-  assert.equal(camera.zoom, 2.5);
+  assert.equal(camera.zoom, 5);
   controls.setZoom(NaN);
-  assert.equal(camera.zoom, 2.5);
+  assert.equal(camera.zoom, 5);
   const target = controls.target.clone(), yaw = controls.yaw, pitch = controls.pitch;
   controls.resize(500, 900);
   assert.deepEqual(controls.target, target);
   assert.equal(controls.yaw, yaw);
   assert.equal(controls.pitch, pitch);
-  assert.equal(camera.zoom, 2.5);
+  assert.equal(camera.zoom, 5);
   controls.setZoom(0);
-  assert.equal(camera.zoom, 0.65);
-  controls.reset();
   assert.equal(camera.zoom, 1);
+  controls.reset();
+  assert.equal(camera.zoom, 1.7);
   assert.equal(controls.target.length(), 0);
   assert.ok(Math.abs(controls.screenInput(1, 0).length() - 1) < 1e-9);
+});
+
+test('mobile starts closer, keeps zoom on resize and resets to the current viewport default', () => {
+  const { camera, controls } = setup(390, 844);
+  assert.equal(camera.zoom, 1.7);
+  controls.setZoom(5);
+  controls.resize(844, 390);
+  assert.equal(camera.zoom, 5);
+  controls.reset();
+  assert.equal(camera.zoom, 1);
+  controls.resize(390, 844);
+  controls.reset();
+  assert.equal(camera.zoom, 1.7);
+});
+
+test('camera depth precision separates small surface details throughout the pan range', () => {
+  const { camera, controls } = setup(390, 844);
+  for (const x of [-24, 24]) for (const z of [-34, 34]) {
+    controls.target.set(x, 0, z); controls.apply();
+    const a = new THREE.Vector3(0, 0.065, 0).project(camera);
+    const b = new THREE.Vector3(0, 0.07, 0).project(camera);
+    assert.ok(Math.abs(a.z - b.z) / 2 * (2 ** 24 - 1) > 8);
+    for (const px of [-40, 40]) for (const pz of [-42, 42]) {
+      const depth = new THREE.Vector3(px, 0, pz).project(camera).z;
+      assert.ok(depth >= -1 && depth <= 1, 'neighborhood must not clip when panning');
+    }
+  }
 });
 
 test("only taps select; drag, pinch, cancellation and lost capture cannot select", () => {
@@ -129,4 +157,16 @@ test("parallel two-finger drag moves the ground while preserving angle and zoom"
   pointer("pointerup", 430, 320, 2, "touch");
   pointer("pointerup", 630, 320, 3, "touch");
   assert.equal(taps(), 0);
+});
+
+test('pinch returns to its starting zoom after reaching either limit', () => {
+  for (const zoom of [1, 5]) {
+    const { camera, controls, pointer } = setup();
+    controls.setZoom(zoom);
+    pointer('pointerdown', 400, 300, 2, 'touch');
+    pointer('pointerdown', 600, 300, 3, 'touch');
+    pointer('pointermove', zoom === 1 ? 500 : 700, 300, 3, 'touch');
+    pointer('pointermove', 600, 300, 3, 'touch');
+    assert.equal(camera.zoom, zoom);
+  }
 });
