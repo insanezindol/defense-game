@@ -146,10 +146,6 @@ export class World {
     void loadNeighborhoodModels().then(models => {
       if (this.disposed) { disposeNeighborhoodModels(models); return; }
       this.models = models;
-      this.remove(this.neighborhood);
-      this.neighborhood = createNeighborhood(this.materials, models.houses);
-      this.batchTerrain(this.neighborhood);
-      this.root.add(this.neighborhood);
       const hero = createResident(models.residents[0], 'hero', this.materials);
       hero.position.copy(this.hero.position); hero.quaternion.copy(this.hero.quaternion);
       hero.add(this.hero.getObjectByName('attack-range')!);
@@ -282,7 +278,7 @@ export class World {
       const x = Math.sin(i * 17.81) * 22, z = Math.cos(i * 9.17) * 32;
       const point = roadPoint(nearestRoadDistance({ x, z }));
       if (Math.hypot(point.x - x, point.z - z) < 3.7 || PADS.some(p => Math.hypot(p.x - x, p.z - z) < 2.2) || Math.hypot(x - HOME.x, z - HOME.z) < 6) continue;
-      this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#68795e', this.root, x, 0.22, z).scale.y = 0.65;
+      this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#77715e', this.root, x, 0.22, z).scale.y = 0.65;
 
     }
     this.neighborhood = createNeighborhood(this.materials);
@@ -314,15 +310,14 @@ export class World {
     }
   }
   terrain() {
-    this.box(this.root, '#93674e', 0, -0.65, 0, 80, 1.2, 84);
-    this.box(this.root, '#78856c', 0, -0.06, 0, 80, 0.25, 84);
+    this.box(this.root, '#665749', 0, -0.65, 0, 80, 1.2, 84);
+    this.box(this.root, '#777561', 0, -0.06, 0, 80, 0.25, 84);
     for (const side of [-1, 1]) {
-      this.box(this.root, '#b9b5a0', side * 24.3, 0.08, 0, 6.6, 0.16, 68);
-      for (let z = -33; z < 34; z += 2) this.box(this.root, '#9a9b8a', side * 24.3, 0.165, z, 6.6, 0.012, 0.025);
+      this.box(this.root, '#827e68', side * 24.3, 0.08, 0, 6.6, 0.16, 68);
     }
-    this.box(this.root, '#b9b5a0', 0, 0.08, -26, 46, 0.16, 2.2);
+    this.box(this.root, '#827e68', 0, 0.08, -26, 46, 0.16, 2.2);
     // Rendering and movement share the road samples.
-    for (const [width, y, color] of [[ROAD_HALF_WIDTH + 0.4, 0.09, '#d1c9b4'], [ROAD_HALF_WIDTH, 0.12, '#65757b']] as const) {
+    for (const [width, y, color] of [[ROAD_HALF_WIDTH + 0.4, 0.09, '#9b927d'], [ROAD_HALF_WIDTH, 0.12, '#62685f']] as const) {
       const positions: number[] = [], indices: number[] = [];
       ROAD_POINTS.forEach((p, i) => {
         const before = ROAD_POINTS[Math.max(0, i - 1)], after = ROAD_POINTS[Math.min(ROAD_POINTS.length - 1, i + 1)];
@@ -337,9 +332,9 @@ export class World {
       geometry.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(positions.length / 3 * 2), 2));
       this.mesh(geometry, color, this.root);
     }
-    for (let d = 1; d < ROAD_LENGTH - 2; d += 3) {
+    for (let d = 1; d < ROAD_LENGTH - 2; d += 5) {
       const p = roadPoint(d);
-      this.box(this.root, '#fff5dc', p.x, 0.135, p.z, 0.12, 0.02, 1).rotation.y = Math.atan2(p.dx, p.dz);
+      this.box(this.root, '#4f564c', p.x, 0.135, p.z, 0.035, 0.015, 0.9).rotation.y = Math.atan2(p.dx, p.dz) + Math.sin(d) * 0.8;
     }
     PADS.forEach(p => {
       this.cylinder(this.root, '#627e70', p.x, 0.16, p.z, 1.42, 1.55, 0.22, 32);
@@ -348,10 +343,10 @@ export class World {
       this.box(this.root, '#fff8dc', p.x, 0.29, p.z, 0.65, 0.03, 0.12);
       this.box(this.root, '#fff8dc', p.x, 0.29, p.z, 0.12, 0.03, 0.65);
     });
-    for (let d = 0; d < ROAD_LENGTH; d += 1.1) {
+    for (let d = 0; d < ROAD_LENGTH; d += 2.1) {
       const p = roadPoint(d);
       for (const side of [-1, 1]) {
-        this.box(this.root, '#d1c9b4', p.x - p.dz * side * (ROAD_HALF_WIDTH + 0.18), 0.16,
+        this.box(this.root, '#9b927d', p.x - p.dz * side * (ROAD_HALF_WIDTH + 0.18), 0.16,
           p.z + p.dx * side * (ROAD_HALF_WIDTH + 0.18), 0.28, 0.16, 0.95).rotation.y = Math.atan2(p.dx, p.dz);
       }
     }
@@ -425,16 +420,17 @@ export class World {
       this.particles.update(10);
       this.shake = 0;
     }
-    const moving = dt === 0 ? Boolean(this.hero.userData.walking) : Math.hypot(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y) > 0.001;
+    const dx = s.hero.x - this.heroPosition.x, dz = s.hero.z - this.heroPosition.y;
+    const moving = dt === 0 ? Boolean(this.hero.userData.walking) : Math.hypot(dx, dz) > 0.001;
     this.hero.userData.walking = moving;
     const target = s.enemies.filter(e => Math.hypot(e.x - s.hero.x, e.z - s.hero.z) < 7.8)
       .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0];
-    if (moving && dt > 0) this.hero.rotation.y = Math.atan2(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y);
-    else if (!moving && target) this.hero.rotation.y = Math.atan2(target.x - s.hero.x, target.z - s.hero.z);
-    this.heroPosition.set(s.hero.x, s.hero.z);
     this.hero.position.set(s.hero.x, 0.12, s.hero.z);
+    if (moving && dt > 0) this.hero.lookAt(s.hero.x + dx, 0.12, s.hero.z + dz);
+    else if (!moving && target) this.hero.lookAt(target.x, 0.12, target.z);
+    this.heroPosition.set(s.hero.x, s.hero.z);
     this.ring.position.set(s.hero.x, 0.15, s.hero.z);
-    animateCharacter(this.hero, s.time, moving, Boolean(target && s.hero.cooldown > 0.28));
+    animateCharacter(this.hero, s.time, moving, Boolean(!moving && target && s.hero.cooldown > 0.28));
     this.hero.getObjectByName('health')!.quaternion.copy(this.hero.quaternion.clone().invert().multiply(this.camera.quaternion));
     for (const [id, group] of this.enemies) {
       if (!s.enemies.some(e => e.id === id)) {
@@ -499,9 +495,9 @@ export class World {
     });
     for (const [id, group] of this.shots) {
       if (!s.shots.some(p => p.id === id)) {
-        if (!reset && !group.userData.burst) {
+        if (!reset && (!group.userData.burst || !group.userData.impacted)) {
           const end = group.userData.end as THREE.Vector3;
-          this.impact(end.x, end.z, group.userData.kind === 'frost', group.userData.kind === 'cannon');
+          this.impact(end.x, end.z, !group.userData.burst && group.userData.kind === 'frost', group.userData.burst || group.userData.kind === 'cannon');
         }
         this.remove(group);
         this.shots.delete(id);
@@ -517,7 +513,17 @@ export class World {
         // Skill origin and target coincide; unlike remaining life this survives a slow frame.
         group.userData.burst = shot.kind === 'frost' && shot.x === shot.tx && shot.z === shot.tz;
         if (group.userData.burst) {
-          this.impact(shot.x, shot.z, true, false);
+          group.userData.start = new THREE.Vector3(shot.x - 8, 26, shot.z - 6);
+          group.userData.end = new THREE.Vector3(shot.tx, 0.4, shot.tz);
+          group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+            group.userData.start.clone().sub(group.userData.end).normalize());
+          this.mesh(new THREE.IcosahedronGeometry(0.42, 1), '#49352b', group);
+          this.glow(new THREE.SphereGeometry(0.62, 10, 8), '#ffb347', group);
+          for (let i = 0; i < 7; i++) {
+            const flame = this.glow(new THREE.SphereGeometry(0.48 * (1 - i / 8), 8, 6),
+              i < 2 ? '#ffe5a3' : '#ff702a', group, 0, 0.6 + i * 0.62, 0);
+            flame.scale.y = 1.8;
+          }
         } else {
           const color = shot.kind === 'frost' ? '#78deff' : shot.kind === 'cannon' ? '#ff9b42' : '#ffe4a1';
           if (shot.kind === 'cannon') {
@@ -534,7 +540,15 @@ export class World {
           this.particles.emit(shot.x, shot.kind === 'frost' ? 1.7 : 1.3, shot.z, color, 4, 0.8, 0.25);
         }
       }
-      if (!group.userData.burst) {
+      if (group.userData.burst) {
+        const t = THREE.MathUtils.clamp((0.7 - shot.life) / 0.35, 0, 1);
+        group.position.lerpVectors(group.userData.start, group.userData.end, t * t);
+        if (t >= 1 && !group.userData.impacted) {
+          this.impact(shot.tx, shot.tz, false, true);
+          group.userData.impacted = true;
+          group.visible = false;
+        }
+      } else {
         const t = 1 - shot.life / 0.25;
         const start = group.userData.start as THREE.Vector3, end = group.userData.end as THREE.Vector3;
         const point = projectilePosition(start, end, t, shot.kind === 'cannon');

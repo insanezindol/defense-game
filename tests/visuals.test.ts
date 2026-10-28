@@ -117,3 +117,35 @@ test('choosing a branch rebuilds a level-three tower at the same level and prese
   world.draw(state, null);
   assert.equal(world.towers.get(0)!.group, after, 'unchanged branch must keep its geometry');
 });
+
+test('support meteor descends before one impact and disposes its geometry afterward', async () => {
+  const { World } = await import('../src/world');
+  const { newGame } = await import('../src/game');
+  const state = newGame();
+  state.shots.push({ id: 1, x: 0, z: 0, tx: 0, tz: 0, kind: 'frost', life: 0.7 });
+  const world = Object.create(World.prototype) as InstanceType<typeof World>;
+  let impacts = 0;
+  Object.assign(world, {
+    root: new THREE.Group(), hero: createCharacter('hero'), camera: new THREE.PerspectiveCamera(),
+    ring: new THREE.Mesh(), materials: new Map(), towers: new Map(), enemies: new Map(), shots: new Map(), pads: [],
+    effects: [], lastTime: 0, lastWave: 0, lastHp: state.hp, lastShadowTime: -Infinity, shake: 0,
+    heroPosition: new THREE.Vector2(state.hero.x, state.hero.z),
+    renderer: { shadowMap: { needsUpdate: false } }, particles: { emit() {}, update() {} },
+    controls: { apply() {} }, composer: { render() {} }, impact() { impacts++; },
+    ambientOcclusion: { ssaoMaterial: { uniforms: {
+      cameraProjectionMatrix: { value: new THREE.Matrix4() }, cameraInverseProjectionMatrix: { value: new THREE.Matrix4() },
+    } } },
+  });
+  world.draw(state, null);
+  const meteor = world.shots.get(1)!;
+  assert.equal(meteor.position.y, 26);
+  assert.equal(impacts, 0);
+  state.time = 0.2; state.shots[0].life = 0.5; world.draw(state, null);
+  assert.ok(meteor.position.y < 26 && meteor.position.y > 0.4);
+  state.time = 0.35; state.shots[0].life = 0.35; world.draw(state, null);
+  assert.equal(impacts, 1); assert.equal(meteor.visible, false);
+  let disposed = false;
+  (meteor.children[0] as THREE.Mesh).geometry.addEventListener('dispose', () => disposed = true);
+  state.time = 0.7; state.shots = []; world.draw(state, null);
+  assert.equal(impacts, 1); assert.equal(world.shots.size, 0); assert.ok(disposed);
+});

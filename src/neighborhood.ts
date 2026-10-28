@@ -1,18 +1,13 @@
 import * as THREE from 'three';
 import { HOME } from './battlefield';
-import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
-import { createHouseModel } from './resident-models';
 
-export function createNeighborhood(materials = new Map<string, THREE.MeshStandardMaterial>(), houses: GLTF[] = []) {
+export function createNeighborhood(materials = new Map<string, THREE.MeshStandardMaterial>()) {
   const root = new THREE.Group();
-  const cream = '#adb5a5', dark = '#334852', glass = '#42777f';
-  const wood = '#93674e', leaf = '#558357';
+  const concrete = '#858477', dark = '#343f3b', olive = '#60694d', steel = '#626e65', glass = '#496f72', sand = '#a09270';
   function mesh(p: THREE.Object3D, color: string, geo: THREE.BufferGeometry, x: number, y: number, z: number, name = '') {
-    if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.88, metalness: 0, flatShading: true }));
+    if (!materials.has(color)) materials.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.94, metalness: 0, flatShading: true }));
     const m = new THREE.Mesh(geo, materials.get(color));
-    m.position.set(x, y, z); m.name = name;
-    m.castShadow = m.receiveShadow = true; p.add(m);
-    return m;
+    m.position.set(x, y, z); m.name = name; m.castShadow = m.receiveShadow = true; p.add(m); return m;
   }
   const box = (p: THREE.Object3D, c: string, x: number, y: number, z: number, w: number, h: number, d: number, name = '') =>
     mesh(p, c, new THREE.BoxGeometry(w, h, d), x, y, z, name);
@@ -26,53 +21,74 @@ export function createNeighborhood(materials = new Map<string, THREE.MeshStandar
     m.position.copy(a).add(b).multiplyScalar(0.5);
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
   }
-  function bush(p: THREE.Object3D, x: number, y: number, z: number, r: number, color = leaf) {
-    const m = mesh(p, color, new THREE.IcosahedronGeometry(r, 1), x, y, z); m.scale.y = 0.8;
-    return m;
-  }
-  function fence(p: THREE.Object3D, x: number, z: number, length: number) {
-    const f = group('fence', x, z, p);
-    box(f, '#707b76', 0, 0.55, 0, length, 1.1, 0.4);
-    for (const xx of [-length / 2, length / 2]) box(f, dark, xx, 0.7, 0, 0.2, 1.4, 0.45);
+  function barrier(p: THREE.Object3D, x: number, z: number, length: number) {
+    const f = group('concrete-barrier', x, z, p);
+    box(f, concrete, 0, 0.55, 0, length, 1.1, 0.45);
+    box(f, '#6d7166', 0, 0.2, 0, length + 0.15, 0.4, 0.85);
+    for (let xx = -length / 2 + 0.4; xx < length / 2; xx += 1.2) {
+      box(f, '#b6a569', xx, 0.75, 0.24, 0.15, 0.45, 0.025).rotation.z = -0.4;
+    }
   }
   function crate(p: THREE.Object3D, x: number, z: number) {
     const c = group('supply-crate', x, z, p);
-    box(c, '#66705a', 0, 0.45, 0, 1.1, 0.9, 0.9);
+    box(c, olive, 0, 0.45, 0, 1.1, 0.9, 0.9);
     for (const side of [-1, 1]) box(c, dark, side * 0.36, 0.47, 0, 0.07, 0.94, 0.95);
     box(c, '#d8b870', 0, 0.5, 0.46, 0.28, 0.12, 0.025);
   }
+  function sandbags(p: THREE.Object3D, x: number, z: number, length: number) {
+    const g = group('sandbags', x, z, p);
+    for (let row = 0; row < 3; row++) for (let i = 0; i < length; i++) {
+      const bag = mesh(g, row % 2 ? sand : '#95896b', new THREE.CapsuleGeometry(0.18, 0.48, 2, 6),
+        (i - (length - 1) / 2) * 0.8 + (row % 2) * 0.15, 0.2 + row * 0.3, 0);
+      bag.rotation.z = Math.PI / 2;
+    }
+  }
+  function drum(p: THREE.Object3D, x: number, z: number) {
+    const g = group('fuel-drum', x, z, p);
+    cylinder(g, '#675d43', 0, 0.6, 0, 0.4, 0.4, 1.2, 12);
+    for (const y of [0.15, 1.05]) cylinder(g, dark, 0, y, 0, 0.42, 0.42, 0.06, 12);
+    cylinder(g, '#a09270', 0.15, 1.22, 0, 0.055, 0.055, 0.04);
+  }
   const hq = group('hq', HOME.x, HOME.z);
-  box(hq, '#727d74', 0, 0.2, 0, 9, 0.4, 8);
-  box(hq, '#586b67', 0, 1.5, 0, 7, 2.6, 5.4, 'command-bunker');
-  box(hq, '#334852', 0, 3, 0, 7.6, 0.45, 6, 'roof');
+  box(hq, concrete, 0, 0.2, 0, 9, 0.4, 8);
+  box(hq, '#59665b', 0, 1.5, 0, 7, 2.6, 5.4, 'command-bunker');
+  box(hq, dark, 0, 3, 0, 7.6, 0.45, 6, 'roof');
   box(hq, dark, 0, 1.15, 2.73, 1.5, 2, 0.15);
   for (const x of [-2.25, 2.25]) {
     box(hq, dark, x, 2, 2.73, 1.6, 0.55, 0.16, 'window');
     box(hq, glass, x, 2.05, 2.83, 1.36, 0.22, 0.04);
-    fence(hq, x, -3.2, 3.3);
+    sandbags(hq, x, -3.2, 4);
   }
-  for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
-    box(hq, '#bdab70', side * (2.3 + i * 0.35), 0.43, 3.45, 0.18, 0.035, 0.6).rotation.y = -0.5;
-  }
-  crate(hq, -3.3, 3.1); crate(hq, 3.2, -2.3);
+  sandbags(hq, -2.5, 3.4, 4); sandbags(hq, 2.5, 3.4, 4);
+  crate(hq, -3.3, 2.5); crate(hq, 3.2, -2.3);
   const antenna = group('antenna', 1.8, -1, hq);
   cylinder(antenna, dark, 0, 4.3, 0, 0.045, 0.07, 2.8);
   box(antenna, dark, 0, 5.2, 0, 1.7, 0.06, 0.06);
   box(antenna, '#a7b6ae', 0, 4.65, 0, 0.8, 0.55, 0.12);
-  box(antenna, '#72d5ce', 0, 5.74, 0, 0.08, 0.08, 0.08);
+  box(antenna, '#bd7953', 0, 5.74, 0, 0.08, 0.08, 0.08);
   function support(x: number, z: number, index: number) {
     const g = group('support-building', x, z);
-    box(g, '#8a9387', 0, 0.12, 0, 8.5, 0.24, 8.8);
-    if (houses.length) g.add(createHouseModel(houses[index % houses.length], 6));
-    else {
-      box(g, '#718078', 0, 1.7, 0, 6, 3.2, 5.4);
-      box(g, dark, 0, 3.4, 0, 6.5, 0.3, 5.9, 'roof');
-      for (const xx of [-1.7, 1.7]) box(g, glass, xx, 2, 2.72, 1.1, 0.55, 0.06, 'window');
-      box(g, dark, 0, 1.2, 2.74, 1.15, 2.2, 0.12);
+    box(g, '#7e7b68', 0, 0.12, 0, 8.5, 0.24, 8.8);
+    if (index % 3 === 0) {
+      const tent = group('field-tent', 0, 0, g);
+      box(tent, olive, 0, 0.85, 0, 5.8, 1.3, 6.2);
+      for (const side of [-1, 1]) {
+        box(tent, '#6d7454', side * 1.5, 2.35, 0, 3.5, 0.14, 6.6, 'roof').rotation.z = -side * 0.54;
+        beam(tent, '#9c947c', new THREE.Vector3(side * 2.9, 1.5, 2.8), new THREE.Vector3(side * 3.8, 0.25, 3.6), 0.025);
+      }
+      box(tent, dark, 0, 0.9, 3.13, 1.5, 1.4, 0.06);
+      box(tent, '#8b8c66', 0, 3.22, 0, 0.2, 0.12, 6.7);
+    } else {
+      const hangar = group('barracks', 0, 0, g);
+      box(hangar, concrete, 0, 0.3, 0, 6.3, 0.4, 6.7);
+      const roof = mesh(hangar, index % 2 ? steel : olive,
+        new THREE.CylinderGeometry(3, 3, 6.4, 12, 1, false, -Math.PI / 2, Math.PI), 0, 0.5, 0, 'roof');
+      roof.rotation.x = -Math.PI / 2;
+      for (const zz of [-2.8, -1.4, 0, 1.4, 2.8]) mesh(hangar, dark, new THREE.TorusGeometry(3.02, 0.045, 4, 18, Math.PI), 0, 0.5, zz);
+      box(hangar, dark, 0, 1.15, 3.24, 1.5, 1.7, 0.08);
+      for (const side of [-1, 1]) box(hangar, glass, side * 1.85, 1.3, 3.25, 0.75, 0.35, 0.06, 'window');
     }
-    crate(g, -2.5, 3.4); fence(g, 0, -3.5, 7.3);
-    box(g, dark, 0, 1.8, 2.95, 2, 0.4, 0.1);
-    for (const side of [-1, 1]) box(g, '#d8b870', side * 0.7, 1.8, 3.02, 0.1, 0.24, 0.04);
+    crate(g, -2.5, 3.4); drum(g, 2.4, 3.2); barrier(g, 0, -3.7, 7.3);
     return g;
   }
   for (let i = 0; i < 8; i++) {
@@ -82,64 +98,78 @@ export function createNeighborhood(materials = new Map<string, THREE.MeshStandar
   for (let i = 0; i < 4; i++) support(-16 + i * 10, -22, i);
   for (const x of [8, 18]) {
     const g = group('logistics', x, 27);
-    box(g, '#8a9387', 0, 0.14, 0, 8.5, 0.28, 7);
-    box(g, '#718078', 0, 2, 0, 7, 4, 5);
-    box(g, dark, 0, 4.15, 0, 7.5, 0.3, 5.5);
+    box(g, concrete, 0, 0.14, 0, 8.5, 0.28, 7);
+    box(g, steel, 0, 2, 0, 7, 4, 5);
+    box(g, dark, 0, 4.15, 0, 7.5, 0.3, 5.5, 'roof');
     box(g, dark, 0, 3.35, 2.65, 7.3, 0.85, 0.25);
-    box(g, '#475957', 0, 1.4, 2.56, 3.4, 2.6, 0.12);
-    for (let y = 0.4; y < 2.7; y += 0.3) box(g, '#78837b', 0, y, 2.65, 3.3, 0.035, 0.04);
-    crate(g, -2.7, 3); crate(g, 2.7, 3);
+    box(g, '#47534a', 0, 1.4, 2.56, 3.4, 2.6, 0.12);
+    for (let y = 0.4; y < 2.7; y += 0.3) box(g, '#8a8b77', 0, y, 2.65, 3.3, 0.035, 0.04);
+    for (const side of [-1, 1]) { crate(g, side * 2.7, 3); drum(g, side * 3.4, -2.3); }
   }
-  for (let i = 0; i < 16; i++) {
-    const x = i % 2 ? 21.8 : -21.8, z = -25 + Math.floor(i / 2) * 8;
-    const g = group('tree', x, z);
-    cylinder(g, '#b9b5a0', 0, 0.14, 0, 1.25, 1.3, 0.28, 8);
-    cylinder(g, wood, 0, 1.65, 0, 0.16, 0.28, 3.1, 7);
-    for (const side of [-1, 1]) beam(g, wood, new THREE.Vector3(0, 1.8, 0), new THREE.Vector3(side * 0.65, 3.1, 0.2), 0.1);
-    bush(g, -0.6, 3.1, 0, 1.1, i % 4 ? leaf : '#c49168');
-    bush(g, 0.55, 3.5, 0.15, 1.3, i % 4 ? '#759658' : '#d6ae75');
-    bush(g, 0, 4.1, -0.15, 1, i % 4 ? '#8ca568' : '#d6ae75');
-  }
-  for (let i = 0; i < 8; i++) {
-    const side = i % 2 ? 1 : -1, x = side * 24.5, z = -23 + Math.floor(i / 2) * 16;
-    const g = group('streetlight', x, z);
-    cylinder(g, dark, 0, 2.5, 0, 0.07, 0.13, 5);
-    cylinder(g, dark, 0, 0.3, 0, 0.22, 0.28, 0.5);
-    box(g, dark, -side * 0.6, 5, 0, 1.3, 0.1, 0.12);
-    box(g, dark, -side * 1.2, 4.94, 0, 0.65, 0.15, 0.45);
-    box(g, '#f6d28b', -side * 1.2, 4.84, 0, 0.5, 0.07, 0.32);
+  for (const side of [-1, 1]) {
+    const fence = group('perimeter-wire', side * 20.8, 0);
+    for (let z = -28; z <= 28; z += 4) {
+      cylinder(fence, dark, 0, 0.9, z, 0.055, 0.07, 1.8);
+      if (z < 28) for (const y of [0.6, 1.1, 1.6]) beam(fence, '#73796d', new THREE.Vector3(0, y, z), new THREE.Vector3(0, y, z + 4), 0.018);
+      mesh(fence, '#73796d', new THREE.TorusGeometry(0.28, 0.025, 3, 8), 0, 1.65, z + 0.5).rotation.y = Math.PI / 2;
+    }
+    for (const z of [-34, 34]) {
+      const tower = group('watchtower', side * 24, z);
+      for (const xx of [-1.2, 1.2]) for (const zz of [-1.2, 1.2]) {
+        box(tower, steel, xx, 2.6, zz, 0.18, 5.2, 0.18);
+        beam(tower, dark, new THREE.Vector3(xx, 0.2, zz), new THREE.Vector3(-xx, 4.7, zz), 0.045);
+      }
+      box(tower, dark, 0, 4.8, 0, 3.1, 0.2, 3.1);
+      for (const xx of [-1.4, 1.4]) box(tower, olive, xx, 5.3, 0, 0.14, 0.9, 2.9);
+      for (const zz of [-1.4, 1.4]) box(tower, olive, 0, 5.3, zz, 2.9, 0.9, 0.14);
+      box(tower, dark, 0, 6.4, 0, 3.6, 0.18, 3.6, 'roof');
+      for (const xx of [-1.4, 1.4]) for (const zz of [-1.4, 1.4]) box(tower, steel, xx, 5.9, zz, 0.09, 0.9, 0.09);
+      for (const xx of [-0.3, 0.3]) box(tower, dark, xx, 2.4, 1.6, 0.07, 4.8, 0.07);
+      for (let y = 0.3; y < 4.8; y += 0.35) box(tower, steel, 0, y, 1.6, 0.65, 0.06, 0.07);
+    }
   }
   for (let i = 0; i < 4; i++) {
-    const g = group('car', i % 2 ? 24.8 : -24.8, -17 + i * 12);
-    const color = ['#606e5d', '#6b756a', '#476f73', '#7b8584'][i];
-    box(g, dark, 0, 0.38, 0, 1.55, 0.3, 3.3);
-    box(g, color, 0, 0.75, 0, 1.8, 0.65, 3.6);
-    const cabin = mesh(g, color, new THREE.CylinderGeometry(1, 1.25, 0.85, 4), 0, 1.46, -0.15);
-    cabin.rotation.y = Math.PI / 4; cabin.scale.set(0.87, 1, 1.3);
-    box(g, glass, 0, 1.45, 0.86, 1.15, 0.58, 0.06).rotation.x = -0.24;
-    for (const side of [-1, 1]) {
-      box(g, glass, side * 0.73, 1.45, -0.1, 0.03, 0.5, 1.5);
-      for (const zz of [-1.1, 1.1]) {
-        cylinder(g, '#333d41', side * 0.86, 0.42, zz, 0.38, 0.38, 0.22, 12).rotation.z = Math.PI / 2;
-        cylinder(g, '#b6bec2', side * 0.99, 0.42, zz, 0.19, 0.19, 0.025, 8).rotation.z = Math.PI / 2;
-      }
-      box(g, '#f6d28b', side * 0.55, 0.84, 1.82, 0.4, 0.2, 0.05);
-      box(g, '#9f6150', side * 0.55, 0.84, -1.82, 0.35, 0.17, 0.05);
+    const side = i % 2 ? 1 : -1;
+    const g = group(i < 2 ? 'armored-vehicle' : 'supply-truck', side * 24.8, -15 + Math.floor(i / 2) * 25);
+    box(g, dark, 0, 0.5, 0, 2.1, 0.45, 4.3);
+    box(g, olive, 0, 1.1, 0, 2.3, 0.9, 4.6);
+    box(g, olive, 0, 1.8, 1.1, 2.1, 0.7, 1.8);
+    box(g, glass, 0, 1.9, 2.02, 1.5, 0.3, 0.05);
+    if (i < 2) {
+      cylinder(g, steel, 0, 2.05, -0.6, 0.65, 0.85, 0.65);
+      box(g, dark, 0, 2.15, 0.65, 0.13, 0.13, 2.2);
+      box(g, '#a3996b', -0.65, 1.4, 2.32, 0.3, 0.1, 0.03);
+    } else {
+      box(g, '#777a57', 0, 2, -0.75, 2.2, 1.2, 2.5);
+      for (const zz of [-1.7, -0.7, 0.3]) box(g, dark, 0, 2.62, zz, 2.25, 0.06, 0.06);
     }
-    box(g, cream, 0, 0.48, 1.84, 1.6, 0.13, 0.1);
+    for (const side of [-1, 1]) for (const z of [-1.5, 0, 1.5]) {
+      cylinder(g, '#303732', side * 1.13, 0.5, z, 0.48, 0.48, 0.3, 12).rotation.z = Math.PI / 2;
+      cylinder(g, steel, side * 1.3, 0.5, z, 0.22, 0.22, 0.04).rotation.z = Math.PI / 2;
+    }
   }
-  for (let i = 0; i < 3; i++) {
-    const g = group('utility-pole', -25, -29 + i * 26);
-    cylinder(g, wood, 0, 3.7, 0, 0.12, 0.22, 7.4);
-    box(g, dark, 0, 6.8, 0, 2.6, 0.14, 0.15);
-    for (const xx of [-1, 0, 1]) {
-      cylinder(g, cream, xx, 7.05, 0, 0.09, 0.12, 0.4, 6);
-      if (i < 2) for (let j = 0; j < 12; j++) {
-        const a = j / 12, b = (j + 1) / 12;
-        beam(g, dark, new THREE.Vector3(xx, 7.25 - Math.sin(a * Math.PI) * 0.8, a * 26),
-          new THREE.Vector3(xx, 7.25 - Math.sin(b * Math.PI) * 0.8, b * 26), 0.018);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 4; i++) {
+      const g = group('scorched-stump', side * (35 + i % 2), -27 + i * 17);
+      cylinder(g, '#514d3d', 0, 0.8, 0, 0.16, 0.36, 1.6);
+      beam(g, '#514d3d', new THREE.Vector3(0, 0.9, 0), new THREE.Vector3(side * 0.65, 1.65, 0.2), 0.09);
+    }
+    for (const z of [-32, 35]) {
+      const g = group('shell-crater', side * 10, z);
+      cylinder(g, '#575748', 0, 0.08, 0, 2.1, 2.3, 0.1, 14);
+      cylinder(g, '#45493e', 0, 0.14, 0, 1.65, 1.8, 0.03, 14);
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        mesh(g, concrete, new THREE.IcosahedronGeometry(0.22, 0), Math.cos(a) * 2.2, 0.2, Math.sin(a) * 2.2);
       }
     }
+  }
+  for (const x of [-17, 17]) {
+    barrier(root, x, -16.5, 5);
+    sandbags(root, x, 16, 4);
+    const g = group('tank-obstacle', x, -30);
+    for (const angle of [-0.7, 0.7]) box(g, dark, 0, 1.1, 0, 0.18, 2.5, 0.18).rotation.z = angle;
+    box(g, dark, 0, 1.1, 0, 0.18, 0.18, 2.4).rotation.y = 0.5;
   }
   return root;
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MODEL_PATHS, createResident, animateResident, createHouseModel } from '../src/resident-models';
+import { MODEL_PATHS, createResident, animateResident } from '../src/resident-models';
 import { World } from '../src/world';
 
 async function model(path: string) {
@@ -45,15 +45,6 @@ test('authored residents share GPU meshes but have independent animated skeleton
   (world as unknown as { remove(group: THREE.Group): void }).remove(a);
   assert.equal(disposed, 0, 'one resident leaving must not dispose another resident GPU geometry');
   assert.ok(world.root.children.includes(b));
-});
-
-test('authored homes normalize to their lot and reuse model geometry', async () => {
-  const source = await model(MODEL_PATHS[2]);
-  const a = createHouseModel(source, 6), b = createHouseModel(source, 6);
-  const size = new THREE.Box3().setFromObject(a).getSize(new THREE.Vector3());
-  assert.ok(Math.abs(size.x - 6) < 1e-5);
-  assert.ok(size.y > 2 && size.y < 10);
-  assert.equal((a.children[0] as THREE.Mesh).geometry, (b.children[0] as THREE.Mesh).geometry);
 });
 
 test('resident faces follow all eight movement directions in the game coordinate system', async () => {

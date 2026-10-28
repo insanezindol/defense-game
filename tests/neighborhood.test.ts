@@ -8,9 +8,10 @@ import { PADS, ROAD_HALF_WIDTH, nearestRoadDistance, roadPoint } from '../src/ba
 test('outpost has fortified headquarters and perimeter support buildings with finite shared geometry', () => {
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const scene = createNeighborhood(materials);
-  for (const name of ['hq', 'command-bunker', 'antenna', 'supply-crate', 'support-building', 'logistics', 'car', 'tree', 'streetlight', 'fence', 'window', 'roof']) {
+  for (const name of ['hq', 'command-bunker', 'antenna', 'supply-crate', 'support-building', 'logistics', 'field-tent', 'barracks', 'watchtower', 'perimeter-wire', 'sandbags', 'armored-vehicle', 'supply-truck', 'fuel-drum', 'shell-crater', 'tank-obstacle', 'window', 'roof']) {
     assert.ok(scene.getObjectByName(name), name);
   }
+  for (const name of ['car', 'tree', 'streetlight', 'utility-pole']) assert.equal(scene.getObjectByName(name), undefined);
   scene.updateMatrixWorld(true);
   let vertices = 0;
   scene.traverse(object => {

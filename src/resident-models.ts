@@ -5,25 +5,24 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 
 export const MODEL_PATHS = [
   '/models/residents/character-male-d.glb', '/models/residents/character-male-a.glb',
-  '/models/houses/building-type-b.glb', '/models/houses/building-type-e.glb', '/models/houses/building-type-k.glb',
 ] as const;
-export type NeighborhoodModels = { residents: GLTF[]; houses: GLTF[] };
+export type NeighborhoodModels = { residents: GLTF[] };
 
 export async function loadNeighborhoodModels(): Promise<NeighborhoodModels> {
   const loader = new GLTFLoader();
   const models: GLTF[] = [];
   try {
     for (const path of MODEL_PATHS) models.push(await loader.loadAsync(path));
-    return { residents: models.slice(0, 2), houses: models.slice(2) };
+    return { residents: models };
   } catch (error) {
-    disposeNeighborhoodModels({ residents: models, houses: [] });
+    disposeNeighborhoodModels({ residents: models });
     throw error;
   }
 }
 
 export function disposeNeighborhoodModels(models: NeighborhoodModels) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
-  for (const source of [...models.residents, ...models.houses]) source.scene.traverse(object => {
+  for (const source of models.residents) source.scene.traverse(object => {
     if (!(object instanceof THREE.Mesh)) return;
     geometries.add(object.geometry);
     for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
@@ -123,14 +122,3 @@ export function animateResident(model: THREE.Group, time: number, walking: boole
   animation.time = time;
 }
 
-export function createHouseModel(source: GLTF, width: number) {
-  const model = source.scene.clone(true);
-  const bounds = new THREE.Box3().setFromObject(model), center = bounds.getCenter(new THREE.Vector3());
-  const scale = width / (bounds.max.x - bounds.min.x);
-  model.scale.multiplyScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
-  model.traverse(object => {
-    if (!(object instanceof THREE.Mesh)) return;
-    object.castShadow = object.receiveShadow = true; object.userData.sharedAsset = true;
-  });
-  return model;
-}
