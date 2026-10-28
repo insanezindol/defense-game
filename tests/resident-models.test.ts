@@ -55,3 +55,21 @@ test('authored homes normalize to their lot and reuse model geometry', async () 
   assert.ok(size.y > 2 && size.y < 10);
   assert.equal((a.children[0] as THREE.Mesh).geometry, (b.children[0] as THREE.Mesh).geometry);
 });
+
+test('resident faces follow all eight movement directions in the game coordinate system', async () => {
+  for (const [index, kind] of [[0, 'hero'], [1, 'grunt']] as const) {
+    const source = await model(MODEL_PATHS[index]);
+    const resident = createResident(source, kind, new Map());
+    for (const [x, z] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      resident.rotation.y = Math.atan2(x, z);
+      animateResident(resident, 0, true, false);
+      animateResident(resident, 0.1, true, false);
+      resident.updateMatrixWorld(true);
+      // The visible face of these authored residents points toward local +Z.
+      const face = new THREE.Vector3(0, 0, 1).applyQuaternion(
+        resident.getObjectByName('head')!.getWorldQuaternion(new THREE.Quaternion()));
+      face.y = 0; face.normalize();
+      assert.ok(face.dot(new THREE.Vector3(x, 0, z).normalize()) > 0.98, `${kind} faces backward for ${x},${z}`);
+    }
+  }
+});

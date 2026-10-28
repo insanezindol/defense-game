@@ -429,8 +429,8 @@ export class World {
     this.hero.userData.walking = moving;
     const target = s.enemies.filter(e => Math.hypot(e.x - s.hero.x, e.z - s.hero.z) < 7.8)
       .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0];
-    if (target) this.hero.rotation.y = Math.atan2(target.x - s.hero.x, target.z - s.hero.z);
-    else if (moving && dt > 0) this.hero.rotation.y = Math.atan2(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y);
+    if (moving && dt > 0) this.hero.rotation.y = Math.atan2(s.hero.x - this.heroPosition.x, s.hero.z - this.heroPosition.y);
+    else if (!moving && target) this.hero.rotation.y = Math.atan2(target.x - s.hero.x, target.z - s.hero.z);
     this.heroPosition.set(s.hero.x, s.hero.z);
     this.hero.position.set(s.hero.x, 0.12, s.hero.z);
     this.ring.position.set(s.hero.x, 0.15, s.hero.z);
