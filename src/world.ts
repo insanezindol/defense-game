@@ -10,7 +10,7 @@ import { createCharacter, animateCharacter, createDefense, projectilePosition } 
 import { createNeighborhood } from "./neighborhood";
 import { loadNeighborhoodModels, createResident, disposeNeighborhoodModels, type NeighborhoodModels } from './resident-models';
 import { BattleParticles } from "./world-particles";
-import { PADS, TOWERS, type GameState } from "./game";
+import { PADS, TOWERS, towerStats, type TowerBranch, type GameState } from "./game";
 import { CameraControls } from "./camera-controls";
 import { ROAD_POINTS, ROAD_LENGTH, ROAD_HALF_WIDTH, roadPoint, nearestRoadDistance, HOME } from "./battlefield";
 export class World {
@@ -20,7 +20,7 @@ export class World {
   root = new THREE.Group();
   hero = new THREE.Group();
   enemies = new Map<number, THREE.Group>();
-  towers = new Map<number, { level: number; group: THREE.Group }>();
+  towers = new Map<number, { level: number; branch?: TowerBranch; group: THREE.Group }>();
   shots = new Map<number, THREE.Group>();
   pads: THREE.Mesh[] = [];
   ring: THREE.Mesh;
@@ -57,7 +57,7 @@ export class World {
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.setClearColor("#b5cbd0", 1);
+    this.renderer.setClearColor("#aebdc2", 1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.domElement.setAttribute(
@@ -66,7 +66,7 @@ export class World {
     );
     host.appendChild(this.renderer.domElement);
     this.scene.add(this.root);
-    this.scene.background = new THREE.Color('#b5cbd0');
+    this.scene.background = new THREE.Color('#aebdc2');
     this.scene.add(new THREE.HemisphereLight("#dbe9fa", "#6c7150", 0.75));
     const sun = new THREE.DirectionalLight("#ffe6bd", 2.6);
     sun.position.set(-30, 48, 15);
@@ -99,9 +99,9 @@ export class World {
     this.batchTerrain();
     this.batchTerrain(this.neighborhood);
     this.root.add(this.neighborhood);
-    this.sign('동네슈퍼', 8, 3.35, 29.82, '#9f6150');
-    this.sign('빵 굽는 오후', 18, 3.35, 29.82, '#476f73');
-    this.sign('우리집', HOME.x, 2.5, HOME.z + 2.83, '#476f73', 1.15, 0.32);
+    this.sign('ARMORY', 8, 3.35, 29.82, '#304b52');
+    this.sign('LOGISTICS', 18, 3.35, 29.82, '#304b52');
+    this.sign('HQ', HOME.x, 2.1, HOME.z + 2.91, '#304b52', 1.4, 0.45);
     this.scene.add(this.particles.points);
     this.hero = createCharacter("hero", this.materials);
     this.root.add(this.hero);
@@ -154,7 +154,7 @@ export class World {
       hero.position.copy(this.hero.position); hero.quaternion.copy(this.hero.quaternion);
       hero.add(this.hero.getObjectByName('attack-range')!);
       this.remove(this.hero); this.hero = hero; this.root.add(hero);
-      for (const [id, enemy] of this.enemies) if (enemy.userData.kind === 'grunt') {
+      for (const [id, enemy] of this.enemies) {
         this.remove(enemy); this.enemies.delete(id);
       }
       this.renderer.shadowMap.needsUpdate = true;
@@ -268,7 +268,7 @@ export class World {
       const fireball = this.glow(new THREE.IcosahedronGeometry(0.5, 1), '#ffcc66', group, 0, 0.35, 0);
       fireball.scale.y = 1.6;
       for (let i = 0; i < 5; i++) {
-        const smoke = this.glow(new THREE.BoxGeometry(0.15, 0.08, 0.25), ['#ff99bb', '#86dfea', '#fff296'][i % 3], group,
+        const smoke = this.glow(new THREE.BoxGeometry(0.15, 0.08, 0.25), ['#da9d68', '#747e80', '#c4bc9b'][i % 3], group,
           Math.sin(i * 2.4) * 0.35, 0.5 + i * 0.17, Math.cos(i * 2.4) * 0.35);
         (smoke.material as THREE.MeshBasicMaterial).blending = THREE.NormalBlending;
       }
@@ -282,8 +282,8 @@ export class World {
       const x = Math.sin(i * 17.81) * 22, z = Math.cos(i * 9.17) * 32;
       const point = roadPoint(nearestRoadDistance({ x, z }));
       if (Math.hypot(point.x - x, point.z - z) < 3.7 || PADS.some(p => Math.hypot(p.x - x, p.z - z) < 2.2) || Math.hypot(x - HOME.x, z - HOME.z) < 6) continue;
-      this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#759658', this.root, x, 0.22, z).scale.y = 0.65;
-      this.mesh(new THREE.SphereGeometry(0.14, 6, 4), ['#fff3a6', '#ff9bc4', '#ffffff'][i % 3], this.root, x, 0.35, z);
+      this.mesh(new THREE.IcosahedronGeometry(0.45, 0), '#68795e', this.root, x, 0.22, z).scale.y = 0.65;
+
     }
     this.neighborhood = createNeighborhood(this.materials);
     this.root.add(this.neighborhood);
@@ -315,7 +315,7 @@ export class World {
   }
   terrain() {
     this.box(this.root, '#93674e', 0, -0.65, 0, 80, 1.2, 84);
-    this.box(this.root, '#859461', 0, -0.06, 0, 80, 0.25, 84);
+    this.box(this.root, '#78856c', 0, -0.06, 0, 80, 0.25, 84);
     for (const side of [-1, 1]) {
       this.box(this.root, '#b9b5a0', side * 24.3, 0.08, 0, 6.6, 0.16, 68);
       for (let z = -33; z < 34; z += 2) this.box(this.root, '#9a9b8a', side * 24.3, 0.165, z, 6.6, 0.012, 0.025);
@@ -357,7 +357,7 @@ export class World {
     }
   }
 
-  tower(kind: keyof typeof TOWERS, level: number) { return createDefense(kind, level, this.materials); }
+  tower(kind: keyof typeof TOWERS, level: number, branch?: TowerBranch) { return createDefense(kind, level, this.materials, branch); }
   setZoom(value: number) { this.controls.setZoom(value); }
   resetView() { this.controls.reset(); }
   screenInput(x: number, z: number) { const v = this.controls.screenInput(x, z); return { x: v.x, z: v.y }; }
@@ -446,9 +446,8 @@ export class World {
     for (const e of s.enemies) {
       let group = this.enemies.get(e.id);
       if (!group) {
-        const kind = e.kind === 'grunt' && e.id % 3 === 0 ? 'spam' : e.kind;
-        group = kind === 'grunt' && this.models ? createResident(this.models.residents[1], 'grunt', this.materials) :
-          createCharacter(kind, this.materials);
+        group = this.models ? createResident(this.models.residents[1], e.kind, this.materials) :
+          createCharacter(e.kind, this.materials);
         this.enemies.set(e.id, group);
         this.root.add(group);
         this.renderer.shadowMap.needsUpdate = true;
@@ -477,20 +476,20 @@ export class World {
     }
     for (const tower of s.towers) {
       const old = this.towers.get(tower.pad), pad = PADS[tower.pad];
-      if (!old || old.level !== tower.level) {
+      if (!old || old.level !== tower.level || old.branch !== tower.branch) {
         if (old) this.remove(old.group);
-        const group = this.tower(tower.kind, tower.level);
+        const group = this.tower(tower.kind, tower.level, tower.branch);
         group.position.set(pad.x, 0.15, pad.z);
         this.root.add(group);
-        this.towers.set(tower.pad, { level: tower.level, group });
+        this.towers.set(tower.pad, { level: tower.level, branch: tower.branch, group });
         this.renderer.shadowMap.needsUpdate = true;
         if (!reset) this.particles.emit(pad.x, 0.5, pad.z, '#ffd28c', 24, 2);
       }
       const group = this.towers.get(tower.pad)!.group;
-      const blades = group.getObjectByName('blades');
-      if (blades) blades.rotation.z = s.time * 12;
+      const barrels = group.getObjectByName('barrels');
+      if (barrels) barrels.rotation.z = s.time * 12;
       const turret = group.getObjectByName('turret');
-      const enemy = s.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - pad.x, e.z - pad.z) <= TOWERS[tower.kind].range + (tower.level - 1) * 0.3)
+      const enemy = s.enemies.filter(e => e.hp > 0 && Math.hypot(e.x - pad.x, e.z - pad.z) <= towerStats(s, tower).range)
         .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0];
       if (turret && enemy) turret.rotation.y = Math.atan2(enemy.x - pad.x, enemy.z - pad.z);
     }
@@ -518,12 +517,11 @@ export class World {
         // Skill origin and target coincide; unlike remaining life this survives a slow frame.
         group.userData.burst = shot.kind === 'frost' && shot.x === shot.tx && shot.z === shot.tz;
         if (group.userData.burst) {
-          this.impact(shot.x, shot.z, true, true);
+          this.impact(shot.x, shot.z, true, false);
         } else {
           const color = shot.kind === 'frost' ? '#78deff' : shot.kind === 'cannon' ? '#ff9b42' : '#ffe4a1';
           if (shot.kind === 'cannon') {
-            this.box(group, '#d5a16a', 0, 0, 0, 0.35, 0.3, 0.35);
-            this.box(group, '#fff0b8', 0, 0.16, 0, 0.09, 0.02, 0.36);
+            this.mesh(new THREE.SphereGeometry(0.16, 8, 6), '#34494f', group).scale.z = 1.6;
           } else if (shot.kind === 'arrow') {
             this.box(group, '#ffe06a', 0, 0, 0, 0.12, 0.12, 0.4);
           } else this.glow(new THREE.SphereGeometry(0.12, 8, 6), color, group);

@@ -24,7 +24,7 @@ async function model(path: string) {
 
 test('authored residents share GPU meshes but have independent animated skeletons', async () => {
   const source = await model(MODEL_PATHS[0]);
-  for (const name of ['idle', 'walk', 'attack-melee-right']) assert.ok(source.animations.some(a => a.name === name));
+  for (const name of ['idle', 'walk', 'holding-right-shoot']) assert.ok(source.animations.some(a => a.name === name));
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const a = createResident(source, 'hero', materials), b = createResident(source, 'hero', materials);
   const meshA = a.getObjectByName('body-mesh') as THREE.SkinnedMesh;
@@ -35,7 +35,7 @@ test('authored residents share GPU meshes but have independent animated skeleton
   animateResident(a, 0, true, false); animateResident(a, 0.1, true, false); animateResident(a, 0.2, true, false);
   assert.ok(a.getObjectByName('leg-left')!.quaternion.angleTo(before) > 0.01);
   assert.ok(b.getObjectByName('leg-left')!.quaternion.equals(before));
-  assert.ok(a.getObjectByName('broom') && a.getObjectByName('hp'));
+  assert.ok(a.getObjectByName('rifle') && a.getObjectByName('hp'));
   assert.equal(meshA.userData.sharedAsset, true);
   let disposed = 0;
   meshA.geometry.addEventListener('dispose', () => disposed++);
@@ -70,6 +70,45 @@ test('resident faces follow all eight movement directions in the game coordinate
         resident.getObjectByName('head')!.getWorldQuaternion(new THREE.Quaternion()));
       face.y = 0; face.normalize();
       assert.ok(face.dot(new THREE.Vector3(x, 0, z).normalize()) > 0.98, `${kind} faces backward for ${x},${z}`);
+    }
+  }
+});
+
+
+test('all authored combat roles fit helmets to their head and retain rifle gear through shooting', async () => {
+  const source = await model(MODEL_PATHS[1]);
+  for (const kind of ['hero', 'grunt', 'runner', 'brute', 'boss'] as const) {
+    const resident = createResident(source, kind, new Map());
+    resident.updateMatrixWorld(true);
+    const helmet = new THREE.Box3().setFromObject(resident.getObjectByName('helmet')!);
+    const head = new THREE.Box3().setFromObject(resident.getObjectByName('head-mesh')!);
+    assert.ok(helmet.max.y >= head.max.y * 0.92, `${kind} helmet should cover top of the head`);
+    assert.ok(helmet.getSize(new THREE.Vector3()).x >= head.getSize(new THREE.Vector3()).x * 0.9);
+    assert.ok(resident.getObjectByName('armor') && resident.getObjectByName('rifle'));
+    animateResident(resident, 0, false, true);
+    assert.equal(resident.userData.resident.state, 'holding-right-shoot');
+  }
+});
+
+test('combat gear batches each rigid attachment into one colored mesh with intact dimensions', async () => {
+  const source = await model(MODEL_PATHS[1]);
+  const materials = new Map<string, THREE.MeshStandardMaterial>();
+  for (const kind of ['hero', 'grunt', 'runner', 'brute', 'boss'] as const) {
+    const resident = createResident(source, kind, materials);
+    for (const [name, width] of [['helmet', 1.85], ['armor', kind === 'brute' || kind === 'boss' ? 1.46 : 0.78], ['rifle', 0.18]] as const) {
+      const group = resident.getObjectByName(name)!;
+      assert.equal(group.children.length, 1, `${kind} ${name} needs one draw call`);
+      const mesh = group.children[0] as THREE.Mesh;
+      assert.ok(mesh instanceof THREE.Mesh);
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      assert.equal(material.vertexColors, true);
+      assert.equal(mesh.userData.sharedAsset, undefined, 'generated gear remains instance-owned for disposal');
+      mesh.geometry.computeBoundingBox();
+      assert.ok(Math.abs(mesh.geometry.boundingBox!.getSize(new THREE.Vector3()).x - width) < 1e-5, `${kind} ${name} retains width`);
+      const colors = mesh.geometry.attributes.color;
+      assert.equal(colors.count, mesh.geometry.attributes.position.count);
+      const unique = new Set(Array.from({ length: colors.count }, (_, i) => `${colors.getX(i)},${colors.getY(i)},${colors.getZ(i)}`));
+      assert.ok(unique.size >= 2, `${name} retains team markings`);
     }
   }
 });

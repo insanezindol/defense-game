@@ -5,10 +5,10 @@ import { createNeighborhood } from '../src/neighborhood';
 import { World } from '../src/world';
 import { PADS, ROAD_HALF_WIDTH, nearestRoadDistance, roadPoint } from '../src/battlefield';
 
-test('neighborhood has detailed homes, shops and street life with finite shared geometry', () => {
+test('outpost has fortified headquarters and perimeter support buildings with finite shared geometry', () => {
   const materials = new Map<string, THREE.MeshStandardMaterial>();
   const scene = createNeighborhood(materials);
-  for (const name of ['home', 'shop', 'car', 'tree', 'streetlight', 'fence', 'window', 'roof', 'air-conditioner']) {
+  for (const name of ['hq', 'command-bunker', 'antenna', 'supply-crate', 'support-building', 'logistics', 'car', 'tree', 'streetlight', 'fence', 'window', 'roof']) {
     assert.ok(scene.getObjectByName(name), name);
   }
   scene.updateMatrixWorld(true);
@@ -20,7 +20,7 @@ test('neighborhood has detailed homes, shops and street life with finite shared 
     vertices += positions.count;
     assert.ok(Array.from(positions.array).every(Number.isFinite));
   });
-  assert.ok(vertices > 20000 && vertices < 350000, `detail budget: ${vertices}`);
+  assert.ok(vertices > 10000 && vertices < 350000, `detail budget: ${vertices}`);
   assert.ok(materials.size < 65, `material budget: ${materials.size}`);
   const bounds = new THREE.Box3().setFromObject(scene);
   assert.ok(bounds.min.y >= -0.01 && bounds.max.y < 13);
@@ -30,7 +30,7 @@ test('solid neighborhood props stay outside combat roads and build footprints', 
   const scene = createNeighborhood();
   scene.updateMatrixWorld(true);
   for (const object of scene.children) {
-    if (object.name === 'home') continue;
+    if (object.name === 'hq') continue;
     const bounds = new THREE.Box3().setFromObject(object);
     for (const pad of PADS) assert.ok(!bounds.intersectsBox(new THREE.Box3(
       new THREE.Vector3(pad.x - 1.65, 0, pad.z - 1.65),

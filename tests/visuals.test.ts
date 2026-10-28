@@ -86,3 +86,34 @@ test("detailed characters use a small number of GPU-skinned draw calls", () => {
   mesh.skeleton.update();
   assert.ok(before.some((p, i) => p.distanceTo(mesh.getVertexPosition(i, new THREE.Vector3())) > 0.05));
 });
+
+test('choosing a branch rebuilds a level-three tower at the same level and preserves it afterward', async () => {
+  const { World } = await import('../src/world');
+  const { newGame } = await import('../src/game');
+  const state = newGame();
+  state.towers.push({ pad: 0, kind: 'arrow', level: 3, cooldown: 0 });
+  const world = Object.create(World.prototype) as InstanceType<typeof World>;
+  Object.assign(world, {
+    root: new THREE.Group(), hero: createCharacter('hero'), camera: new THREE.PerspectiveCamera(),
+    ring: new THREE.Mesh(), materials: new Map(), towers: new Map(), enemies: new Map(), shots: new Map(), pads: [],
+    effects: [], lastTime: 0, lastWave: 0, lastHp: state.hp, lastShadowTime: -Infinity, shake: 0,
+    heroPosition: new THREE.Vector2(state.hero.x, state.hero.z),
+    renderer: { shadowMap: { needsUpdate: false } }, particles: { emit() {}, update() {} },
+    controls: { apply() {} }, composer: { render() {} },
+    ambientOcclusion: { ssaoMaterial: { uniforms: {
+      cameraProjectionMatrix: { value: new THREE.Matrix4() }, cameraInverseProjectionMatrix: { value: new THREE.Matrix4() },
+    } } },
+  });
+  world.draw(state, null);
+  const before = world.towers.get(0)!.group;
+  let disposed = false;
+  before.traverse(object => { if (object instanceof THREE.Mesh) object.geometry.addEventListener('dispose', () => disposed = true); });
+  state.towers[0].branch = 'secondary';
+  world.draw(state, null);
+  const after = world.towers.get(0)!.group;
+  assert.notEqual(before, after);
+  assert.ok(disposed, 'replaced tower geometry must be disposed');
+  assert.ok(after.getObjectByName('branch-secondary'));
+  world.draw(state, null);
+  assert.equal(world.towers.get(0)!.group, after, 'unchanged branch must keep its geometry');
+});
