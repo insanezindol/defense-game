@@ -65,7 +65,6 @@ function App() {
   const [selected, setSelected] = useState<number | null>(null);
   const selectedRef = useRef<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false), [intelOpen, setIntelOpen] = useState(false);
-  const menuOpenRef = useRef(false);
   const [paused, setPaused] = useState(false), pausedRef = useRef(false);
   const [help, setHelp] = useState(!initial), [newOperation, setNewOperation] = useState(!initial);
   const newOperationRef = useRef(!initial);
@@ -81,7 +80,6 @@ function App() {
   const audio = useRef<AudioContext | null>(null);
   useEffect(() => { if (selected !== null) buildSheet.current?.focus(); }, [selected]);
   selectedRef.current = selected;
-  menuOpenRef.current = menuOpen;
   pausedRef.current = paused || help || confirmReset || view.pendingTactic;
   soundRef.current = sound; speedRef.current = speed;
   function notify(message: string) {
@@ -139,7 +137,7 @@ function App() {
     let last = performance.now(), ui = 0, autosave = 0, previousKills = state.current.kills, previousPhase = state.current.phase;
     w.renderer.setAnimationLoop((now: number) => {
       const dt = Math.min((now - last) / 1000, 0.05); last = now;
-      if (!pausedRef.current && !menuOpenRef.current && selectedRef.current === null && !document.hidden) {
+      if (!pausedRef.current && !document.hidden) {
         const x = Number(keys.current.has('d') || keys.current.has('arrowright')) - Number(keys.current.has('a') || keys.current.has('arrowleft')) + joystick.current.x;
         const z = Number(keys.current.has('s') || keys.current.has('arrowdown')) - Number(keys.current.has('w') || keys.current.has('arrowup')) + joystick.current.z;
         const movement = w.screenInput(x, z), beforeGold = state.current.gold;
@@ -217,7 +215,7 @@ function App() {
       <span aria-hidden="true">+</span><i style={{ transform: `translate(${knob.x}px, ${knob.y}px)` }} />
     </div>
     {menuOpen && <section className="command-panel" aria-label="지휘 패널">
-      <div className="panel-heading"><div><span className="eyebrow">COMMAND · 계획 중 전투 정지</span><h2>지휘 패널</h2></div><button className="icon-button" aria-label="지휘 패널 닫기" onClick={() => setMenuOpen(false)}><Icon name="close" /></button></div>
+      <div className="panel-heading"><div><span className="eyebrow">COMMAND</span><h2>지휘 패널</h2></div><button className="icon-button" aria-label="지휘 패널 닫기" onClick={() => setMenuOpen(false)}><Icon name="close" /></button></div>
       <div className="commander-row"><div><b>지휘관 Lv.{view.heroLevel}</b><small>기본 공격 {18 + (view.heroLevel - 1) * 11} · 자동 사격</small></div><button disabled={!canAct || view.heroLevel >= 10 || view.gold < heroUpgradeCost(view)} onClick={() => act(() => upgradeHero(state.current), '지휘관 강화 완료')}>{view.heroLevel >= 10 ? '최대 강화' : `강화 ${heroUpgradeCost(view)}`}</button></div>
       <div className="commander-row"><div><b>기지 수리</b><small>내구도 35 회복</small></div><button disabled={!canAct || view.hp >= view.maxHp || view.gold < 60} onClick={() => act(() => repair(state.current), '기지 수리 완료')}>수리 60</button></div>
       <label className="pad-picker">부지 바로 선택<select value="" onChange={e => { setSelected(Number(e.target.value)); setMenuOpen(false); }}><option value="" disabled>부지를 선택하세요</option>{PADS.map((_, pad) => {
@@ -235,7 +233,7 @@ function App() {
       <small className="save-note" role={saveError ? 'alert' : undefined}>{saveError ? '저장 실패 — 브라우저 저장 공간을 확인하세요.' : '진행 자동 저장 · 이동 WASD / 방향키 · 지원 Q · 시작 SPACE · 정지 P'}</small>
     </section>}
     {selected !== null && <section ref={buildSheet} tabIndex={-1} className="build-sheet" role="dialog" aria-label={tower ? '포탑 강화' : '포탑 건설'}>
-      <div className="panel-heading"><div><span className="eyebrow">EMPLACEMENT {String(selected + 1).padStart(2, '0')} · 계획 중 전투 정지</span><h2>{tower ? `${TOWERS[tower.kind].name} · Lv.${tower.level}` : '포탑 건설'}</h2></div><button className="icon-button" aria-label="건설 패널 닫기" onClick={() => setSelected(null)}><Icon name="close" /></button></div>
+      <div className="panel-heading"><div><span className="eyebrow">EMPLACEMENT {String(selected + 1).padStart(2, '0')}</span><h2>{tower ? `${TOWERS[tower.kind].name} · Lv.${tower.level}` : '포탑 건설'}</h2></div><button className="icon-button" aria-label="건설 패널 닫기" onClick={() => setSelected(null)}><Icon name="close" /></button></div>
       {!tower ? <div className="build-options">{(Object.keys(TOWERS) as TowerKind[]).map(kind => <button key={kind} className={`build-option ${kind}`} disabled={!canAct || view.gold < TOWERS[kind].cost}
         onClick={() => act(() => build(state.current, selected, kind), `${TOWERS[kind].name} 배치 완료`)}>
         <span className="tower-glyph" aria-hidden="true">{TOWERS[kind].icon}</span><b>{TOWERS[kind].name}</b><small>{TOWERS[kind].subtitle}</small><strong>{TOWERS[kind].cost}<em> 자원</em></strong>

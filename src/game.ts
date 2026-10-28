@@ -6,9 +6,9 @@ export type TowerBranch = "primary" | "secondary";
 export type TacticId = "overclock" | "bounty" | "explosive" | "cryo" | "fieldRepair" | "command";
 export type Phase = "ready" | "battle" | "won" | "lost";
 export const DIFFICULTIES = {
-  easy: { label: "Easy", enemyHpMultiplier: 1 },
-  normal: { label: "Normal", enemyHpMultiplier: 1.4 },
-  hard: { label: "Hard", enemyHpMultiplier: 2 },
+  easy: { label: "Easy", enemyHpMultiplier: 2, hpGrowth: 0, speedMultiplier: 1 },
+  normal: { label: "Normal", enemyHpMultiplier: 5.6, hpGrowth: 0.04, speedMultiplier: 1.08 },
+  hard: { label: "Hard", enemyHpMultiplier: 16, hpGrowth: 0.08, speedMultiplier: 1.15 },
 } as const;
 export type Difficulty = keyof typeof DIFFICULTIES;
 export const DEFAULT_DIFFICULTY: Difficulty = "easy";
@@ -54,7 +54,7 @@ export const BRANCHES: Record<TowerKind, Record<TowerBranch, { name: string; des
     secondary: { name: "소이탄", description: "명중한 적에게 3초 동안 초당 직격 피해의 25% 화상" },
   },
   frost: {
-    primary: { name: "심층 냉각", description: "3.5초 동안 이동 속도 75% 감소" },
+    primary: { name: "심층 냉각", description: "3.5초 동안 이동 속도 60% 감소" },
     secondary: { name: "취약 표식", description: "3초 동안 받는 모든 피해 30% 증가" },
   },
 };
@@ -394,7 +394,7 @@ function shoot(
   }
   if (kind === "frost") {
     target.slow = Math.max(target.slow, branch === "primary" ? 3.5 : 2.5);
-    target.slowFactor = Math.min(target.slowFactor ?? 0.45, branch === "primary" ? 0.25 : 0.45);
+    target.slowFactor = Math.min(target.slowFactor ?? 0.6, branch === "primary" ? 0.4 : 0.6);
     if (branch === "secondary") target.vulnerable = 3;
   }
 }
@@ -431,7 +431,7 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
   if (s.spawned < s.total && s.enemies.filter(e => e.hp > 0).length < 32 && (s.timer -= dt) <= 0) {
     const kind = spawnKind(s);
     const hp =
-      (18 + s.wave * 4) *
+      (18 + s.wave * 4) * (1 + DIFFICULTIES[s.difficulty].hpGrowth) ** (s.wave - 1) *
       (kind === "boss"
         ? 20
         : kind === "brute"
@@ -507,7 +507,7 @@ export function update(s: GameState, dt: number, input = { x: 0, z: 0 }) {
     }
     if (e.vulnerable !== undefined) e.vulnerable = Math.max(0, e.vulnerable - dt);
     e.slow = Math.max(0, e.slow - dt);
-    const speed = e.speed * (e.slow > 0 ? e.slowFactor ?? 0.45 : 1) * dt;
+    const speed = e.speed * DIFFICULTIES[s.difficulty].speedMultiplier * (e.slow > 0 ? e.slowFactor ?? 0.6 : 1) * dt;
     if (e.slow === 0) delete e.slowFactor;
     e.progress = Math.min(ROAD_LENGTH, (e.progress ?? nearestRoadDistance(e)) + speed);
     placeEnemyOnRoad(e);

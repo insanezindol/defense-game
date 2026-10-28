@@ -324,9 +324,9 @@ test("difficulty scales every enemy kind including bosses without extra rewards"
       const original = baseline.enemies.at(-1)!;
       const enemy = scaled.enemies.at(-1)!;
       kinds.add(enemy.kind);
-      const baseHp = (18 + scaled.wave * 4) *
+      const baseHp = (18 + scaled.wave * 4) * (1 + game.DIFFICULTIES[difficulty].hpGrowth) ** (scaled.wave - 1) *
         ({ grunt: 1, runner: 0.65, brute: 3, boss: 20 }[enemy.kind]);
-      assert.equal(enemy.maxHp, baseHp * { easy: 1, normal: 1.4, hard: 2 }[difficulty]);
+      assert.equal(enemy.maxHp, baseHp * { easy: 2, normal: 5.6, hard: 16 }[difficulty]);
       assert.equal(enemy.hp, enemy.maxHp);
       assert.equal(enemy.speed, original.speed);
       assert.equal(enemy.reward, original.reward);
